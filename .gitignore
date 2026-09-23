@@ -1,0 +1,18 @@
+# Xcode
+build/
+DerivedData/
+.build/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+.claude/*
+
+# macOS
+.DS_Store
+
+# Generated comparison images (rebuild with ./make-snapshots.sh, and the two
+# app-*.png with the simctl commands in the README)
+Screenshots/
