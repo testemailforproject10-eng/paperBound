@@ -84,6 +84,8 @@ private struct InFlightPageRender {
 @MainActor
 final class PageImageProvider {
 
+    /// Number of cache-miss preparation jobs; overlay changes must leave this unchanged.
+    private(set) var preparationCount = 0
     private let engine: any ReadingEngine
     private let bookID: UUID
     private let bookSeed: UInt64
@@ -186,6 +188,7 @@ final class PageImageProvider {
         let publish: @Sendable (CGImage) async -> Void = { [weak self] image in
             await self?.publishPaper(image, identifier: identifier, generation: generation)
         }
+        preparationCount += 1
         let task = Task.detached(priority: speculative ? .utility : .userInitiated) { () throws -> PageRenderResult in
             // Rasterize at the text block's size, not the sheet's: the sheet
             // now fills a screen whose shape is not the document's.

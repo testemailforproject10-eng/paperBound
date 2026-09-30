@@ -141,7 +141,7 @@ final class InkGPUSimulationTests: XCTestCase {
                     guard visit == expectedVisit else { return }
                     finished?.fulfill(); finished = nil
                 },
-                footstepVisitID: UUID(),
+                pageEffectVisitID: UUID(),
                 onPaperReady: { _, _, _ in
                     guard !didPresentPaper else { return }
                     didPresentPaper = true

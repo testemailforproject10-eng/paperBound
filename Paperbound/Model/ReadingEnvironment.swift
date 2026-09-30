@@ -349,7 +349,36 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
     /// The book as an object on the shelf.
     var cover: CoverStyle
     /// A live overlay. It does not change composited page pixels.
-    var footstepsEnabled: Bool
+    var pageEffect: PageEffect
+    /// Compatibility with existing callers; saved pageEffect is authoritative.
+    var footstepsEnabled: Bool {
+        get { pageEffect == .footsteps }
+        set { if newValue { pageEffect = .footsteps } else if pageEffect == .footsteps { pageEffect = .none } }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, material, condition, presentation, lighting, intensity, generatorVersion
+        case substrate, marginalia, ink, motion, cover, footstepsEnabled, pageEffect
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(material, forKey: .material)
+        try c.encode(condition, forKey: .condition)
+        try c.encode(presentation, forKey: .presentation)
+        try c.encode(lighting, forKey: .lighting)
+        try c.encode(intensity, forKey: .intensity)
+        try c.encode(generatorVersion, forKey: .generatorVersion)
+        try c.encode(substrate, forKey: .substrate)
+        try c.encode(marginalia, forKey: .marginalia)
+        try c.encode(ink, forKey: .ink)
+        try c.encode(motion, forKey: .motion)
+        try c.encode(cover, forKey: .cover)
+        try c.encode(pageEffect, forKey: .pageEffect)
+        try c.encode(footstepsEnabled, forKey: .footstepsEnabled)
+    }
 
     init(
         id: String = UUID().uuidString,
@@ -365,6 +394,7 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         motion: MotionStyle = .still,
         cover: CoverStyle = .plain,
         footstepsEnabled: Bool = false,
+        pageEffect: PageEffect? = nil,
         generatorVersion: Int = ReadingEnvironment.currentGeneratorVersion
     ) {
         self.id = id
@@ -379,7 +409,7 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         self.ink = ink
         self.motion = motion
         self.cover = cover
-        self.footstepsEnabled = footstepsEnabled
+        self.pageEffect = pageEffect ?? (footstepsEnabled ? .footsteps : .none)
         self.generatorVersion = generatorVersion
     }
 
@@ -401,7 +431,12 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         self.ink = try container.decodeIfPresent(InkBehavior.self, forKey: .ink) ?? .instant
         self.motion = try container.decodeIfPresent(MotionStyle.self, forKey: .motion) ?? .still
         self.cover = try container.decodeIfPresent(CoverStyle.self, forKey: .cover) ?? .plain
-        self.footstepsEnabled = try container.decodeIfPresent(Bool.self, forKey: .footstepsEnabled) ?? false
+        if container.contains(.pageEffect) {
+            let raw = try container.decodeIfPresent(String.self, forKey: .pageEffect)
+            self.pageEffect = raw.flatMap(PageEffect.init(rawValue:)) ?? .none
+        } else {
+            self.pageEffect = (try container.decodeIfPresent(Bool.self, forKey: .footstepsEnabled) ?? false) ? .footsteps : .none
+        }
     }
 
     /// Bump whenever the generator's rules or budgets change, so books rendered
@@ -471,14 +506,14 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         motion.needsLiveLayer || ink.needsLiveLayer
     }
 
-    /// Only the two supported opt-in effects survive old saved appearances.
+    /// Only the supported opt-in effects survive old saved appearances.
     /// Legacy fields remain decodable, but cannot style the live reader.
     var effectsOnly: ReadingEnvironment {
         var result = Self.cleanPaper
         result.id = "reader.effects"
         result.name = "Reading effects"
         result.ink = ink == .enchanted ? .enchanted : .instant
-        result.footstepsEnabled = footstepsEnabled
+        result.pageEffect = pageEffect
         return result
     }
 

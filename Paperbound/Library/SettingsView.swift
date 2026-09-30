@@ -47,7 +47,7 @@ struct SettingsView: View {
 
     private var pageEffectsSection: some View {
         Section("Page effects") {
-            Toggle("Footsteps", isOn: environmentBinding(\.footstepsEnabled))
+            PageEffectPicker(selection: environmentBinding(\.pageEffect))
         }
     }
 

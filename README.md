@@ -1,6 +1,6 @@
 # Paperbound
 
-A native iOS PDF reader with optional **Enchanted Ink** and **Footsteps**.
+A native iOS PDF reader with optional **Enchanted Ink** and eleven individually selectable **page effects**.
 Pages retain the PDF's original colors on a plain white surface. No paper
 textures, wear, cuts, marks, lighting, tint or decorative book presentation are
 applied. Both effects are off on a fresh install and operate only when enabled.
@@ -28,7 +28,7 @@ plus the reader-depth features PDFKit supports natively.
 |---|---|
 | **0 — feasibility spike** | Done. Tears remove real content; the native selection/search path is preserved as a separate mode. |
 | **1 — PDF reader** | Done. Files import, page turns, zoom, reopen at the same page, shelf. |
-| **2 — effects** | Optional Enchanted Ink and three Footsteps trails, with previews and replay. |
+| **2 — effects** | Optional Enchanted Ink and a choice of eleven page effects, with previews and replay. |
 | **3 — legacy wear** | Removed from the live reader. Old saved styles are normalized to plain pages. |
 | **4 — page rendering** | Plain pages, automatic Duo spreads, bounded visible-page cache. |
 | **5 — device adaptation** | Partial, honestly. Layout preserves position across resize/rotation and includes iOS 27.1 hinge and reserved-region integration. The Xcode 27.1 Duo simulator suite passes; hands-on posture checks remain. |
@@ -84,7 +84,7 @@ toolchain is too old.
 4. Tap the middle of the page to show controls, then **⋯ → Reading environment**.
 5. Choose **Text effects → Enchanted Ink**, then use **Replay effect** in the
    preview.
-   Turn on **Page effects → Footsteps** to see three wandering trails;
+   Choose **Page effects → Footsteps** to see three wandering trails;
    **Replay footsteps** resets only that preview.
 6. Tap **Pristine** in the top bar. PDFKit's own view appears: text is
    selectable, search highlights, pinch zoom is real. Tap **Physical** to go
@@ -205,8 +205,8 @@ The three responsibilities stay separate, as the brief requires:
 
 ## The reading environment
 
-The editor and app defaults expose **Text effects** and **Page effects → Footsteps**.
-Instant text and disabled Footsteps are the defaults. Enchanted Ink and Footsteps
+The editor and app defaults expose **Text effects** and a **Page effects** selection list.
+Instant text and **None** are the defaults. Enchanted Ink and Footsteps
 are independent opt-in effects, remembered per book and in app defaults.
 Presentation, lighting, surface/material, condition, marks, presets and motion
 are removed from the live rendering path. Old saved books and defaults retain
@@ -363,6 +363,88 @@ Apple's [Duo adaptive-layout guidance](https://developer.apple.com/videos/play/t
 and the [27.1 beta release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode_27_1_release-notes).
 Hinge updates affect layout and shading only; page visibility and elapsed time
 drive ink flow, so folding does not advance the book or start an animation.
+
+### Page-effect comparison build
+
+Reading environment and app defaults now offer **None**, **Footsteps**, **Paper
+Messengers**, **Margin Creatures**, **Pixie Dust**, **Wandering Wisps**, **Enchanted
+Butterflies**, **Falling Rose Petals**, **Floating Lanterns**, **Wonderland Cards**,
+**Winter Margins**, and **Little Hearth Spirit**. Choose one page effect at a time;
+Instant/Enchanted Ink stays independent. The editor keeps its shared preview and
+**Replay page effect** above the scrolling selector. Replay retains its seed for
+comparison; committed reader visits use fresh seeds.
+
+These decorations use small transparent illustrated sprites, a clock-driven
+controller, and one Canvas per visible unit at up to 30 fps. They neither alter
+PDF pixels nor delay paper readiness. Artwork decoding is serialized off the main
+thread and shared between preview and reader. Only the selected effect's artwork
+is loaded (plus its secondary particles). Prepared wing, torso, and foot parts are
+also counted conservatively against the 16 MiB artwork cache ceiling. Tiny 64-pixel
+selector thumbnails are separate. All runtime effect strips together add about
+1.9 MiB to the bundle. At most 32 sprites are submitted per unit.
+
+The shared readiness value checks page, render, and visit identities. Routes use
+actual paper rectangles, including stacked Duo spreads, and drawing excludes
+reserved regions and the gutter. Paging/zoom pauses movement; canceled turns
+resume their visit. Backgrounding, Reduce Motion, leaving, or selecting None stops
+it. Layout changes fade and replan without changing the reading position. The
+covered reader pauses while its settings preview runs. Footsteps retains its
+three walkers.
+
+Character motion uses registered artwork with articulated wings and a grounded
+walking rig. Each foot stays at a fixed page-space contact during stance, lifts
+for recovery, and replants; bent knees connect the torso to those contacts.
+Walkers travel at 22–29 points/second. Fire and wisps use small, continuously
+deforming gradient-filled flame curves with independently curling tongues, not
+swapped images or strips of a flame texture. This is stylized vector animation,
+not a fluid simulation.
+Arc-length sampled curves keep travel speed even, with smooth acceleration and
+braking. The scene planner gives each visitor an entrance, a destination, and an
+exit beyond the entire viewport (including on stacked spreads). Groups vary from
+one to four flying visitors, two to four walkers, or one to three hearth spirits.
+Creatures and cards have varied wordless encounters. A seeded subset stops;
+companions may walk straight past and ignore them. Questions (`?`) can prompt a
+surprised `!` and a small recoil, a nod, a longer chat, or no reply. Participants,
+reply order, pauses and departure times vary per encounter; they do not all wait
+for a shared stopping or leaving cue. Turns and resting foot positions blend
+across segment boundaries. Choices are prepared once, keeping frame updates
+smooth and preview replay repeatable while reader visits use new seeds.
+Butterflies and wisps gather and rest before departing. Flames enter from below;
+their embers originate at the settled flame. Fairy trails trace an unseen flight
+that also starts outside the viewport.
+
+Petals are 25–39 points long, with varied depth, flutter and fall speed. Their
+prepared trajectories integrate gravity-driven settling, drag and coherent gusts;
+time samples preserve acceleration instead of moving them at uniform spline
+speed. Petals and snow arrive in uneven, staggered bursts with real quiet spells.
+Snowflakes are 14–23 points, with blue-gray contrast on light paper and pale blue
+on dark paper. Early flakes enter from a nearby outer edge to make snowfall
+apparent sooner. Wisps travel at 24–36 points/second and butterflies at 30–44;
+their bobbing, petal flutter, lantern ascents, and fairy journeys are slower.
+Complete articulated characters receive opacity once, avoiding dark seams where
+parts overlap. Single-image particles keep a direct drawing path.
+There is no prefilled population or target count to replenish. Planes and lanterns
+also arrive in varying groups with gaps between passages. Randomness is seeded
+for repeatable preview replay; reader visits retain distinct seeds.
+Artwork parts and route tables are prepared outside drawing callbacks; animation
+performs bounded arithmetic, small path construction, transforms, and draws.
+
+Old saved `footstepsEnabled` values migrate to the new `pageEffect` field when
+that field is absent. Explicit new selections take precedence. Both the selection
+and all overlay state stay outside the page-render/cache identity.
+
+Artwork was generated with the built-in imagegen tool, then packed with alpha
+preserved. Production assets are in `Paperbound/Resources/PageEffects`; the exact
+prompts and generation provenance are in `Docs/page-effect-artwork.json`.
+`Tools/pack-page-effect-artwork.swift` rebuilds strips/thumbnails when the original
+generated source paths in that manifest are available.
+
+`PageEffectCaptureTests` exports 30–60-second, 30 fps comparison GIFs using the production
+controller and Canvas renderer over real sample-PDF pages, with enlarged animated
+detail. GIF players may quantize playback timing; the app uses its animation clock.
+Local review: `Screenshots/PageEffectReview/index.html` and `contact-sheet.png`.
+These are deterministic renderer captures, not full-reader navigation recordings.
+See `Docs/page-effects-validation.md` for measurements and outstanding device QA.
 
 **Footsteps.** This optional page overlay uses a matched pair of small worn
 shoe-print stamps, based on the marks on an old hand-drawn map. Three walkers

@@ -211,6 +211,7 @@ final class FootstepTests: XCTestCase {
             with: JSONEncoder().encode(environment)
         ) as? [String: Any])
         old.removeValue(forKey: "footstepsEnabled")
+        old.removeValue(forKey: "pageEffect")
         XCTAssertFalse(try JSONDecoder().decode(
             ReadingEnvironment.self,
             from: JSONSerialization.data(withJSONObject: old)

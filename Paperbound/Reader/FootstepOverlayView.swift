@@ -4,7 +4,7 @@ import UIKit
 /// A single decorative drawing surface for a whole visible paging unit. The
 /// images are shared by every visit; the clock only controls sprite opacity.
 struct FootstepOverlayView: View {
-    let visit: FootstepVisit
+    let visit: PageEffectVisit
     let seed: UInt64
     let surfaces: [CGRect]
     let reservedRegions: [CGRect]
@@ -48,19 +48,21 @@ struct FootstepOverlayView: View {
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .task(id: visit.visitID) {
+        .task(id: "\(visit.visitID)|\(isPaused)") {
+            guard !isPaused else { return }
             guard FootstepArtwork.available else {
                 artworkFailed = true
                 NSLog("Footsteps unavailable: shoe-print artwork could not be loaded")
                 return
             }
             guard let startedAt = visit.startedAt else { return }
-            let prepared = FootstepEnsemble(
+            let prepared = ensemble ?? FootstepEnsemble(
                 visitID: visit.visitID, seed: seed,
                 surfaces: surfaces, reservedRegions: reservedRegions,
                 startedAt: startedAt, spatialScale: artworkScale
             )
-            prepared.prepare(through: 12)
+            prepared.resume(at: Date())
+            prepared.prepare(through: prepared.elapsed(at: Date()) + 12)
             InkMetrics.trace("Footsteps overlay prepared \(prepared.walkers.map(\.plannedPrints.count).reduce(0, +)) prints")
             if isPaused { prepared.pause(at: Date()) }
             ensemble = prepared

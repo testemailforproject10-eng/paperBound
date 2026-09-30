@@ -143,6 +143,10 @@ final class ReaderViewModel {
         if arguments.contains("-paperbound-demo-ink") {
             self.environment.ink = .enchanted
         }
+        if let index = arguments.firstIndex(of: "-paperbound-demo-page-effect"),
+           index + 1 < arguments.count, let effect = PageEffect(rawValue: arguments[index + 1]) {
+            self.environment.pageEffect = effect
+        }
         if arguments.contains("-paperbound-demo-footsteps") {
             self.environment.footstepsEnabled = true
         }

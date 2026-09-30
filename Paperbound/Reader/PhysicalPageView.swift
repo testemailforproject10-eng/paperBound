@@ -19,7 +19,7 @@ struct PhysicalPageView: View {
     var onImageReady: ((InkPreparationIdentity, UInt64) -> Void)?
     var onRevealComplete: ((InkPreparationIdentity, Date) -> Void)?
     var onFirstInkFrame: ((InkPreparationIdentity) -> Void)?
-    var footstepVisitID: UUID?
+    var pageEffectVisitID: UUID?
     var onPaperReady: ((String, String, UUID) -> Void)?
 
     @Environment(\.displayScale) private var displayScale
@@ -114,7 +114,7 @@ struct PhysicalPageView: View {
             if isPreview { resetPreview() }
             reportPaperReady()
         }
-        .onChange(of: footstepVisitID) { _, _ in reportPaperReady() }
+        .onChange(of: pageEffectVisitID) { _, _ in reportPaperReady() }
         .onChange(of: loadedRenderToken) { _, _ in reportPaperReady() }
         .onChange(of: revealActivation) { _, activation in
             if activation?.state == .finished { session = nil; sessionKey = nil }
@@ -224,13 +224,17 @@ struct PhysicalPageView: View {
         onImageReady?(preparationIdentity, page.revealSeed)
     }
     private func reportPaperReady() {
+        if isPageVisible, !isPreview, loadedRenderToken == renderToken,
+           preparedPaper != nil || page != nil, let pageIdentity {
+            PageEffectDiagnostics.shared.paperReady(pageIdentity)
+        }
         guard isPageVisible,
-              let footstepVisitID,
+              let pageEffectVisitID,
               let pageIdentity,
               loadedRenderToken == renderToken,
               preparedPaper != nil || page != nil else { return }
-        InkMetrics.trace("Footsteps paper ready \(pageIdentity) visit=\(footstepVisitID)")
-        onPaperReady?(pageIdentity, renderToken, footstepVisitID)
+        InkMetrics.trace("Page effect paper ready \(pageIdentity) visit=\(pageEffectVisitID)")
+        onPaperReady?(pageIdentity, renderToken, pageEffectVisitID)
     }
     private func failGPU(_ error: Error) {
         InkMetrics.trace("GPU fallback page=\(preparationIdentity.page) render=\(renderToken) visit=\(preparationIdentity.visit) error=\(error.localizedDescription)")

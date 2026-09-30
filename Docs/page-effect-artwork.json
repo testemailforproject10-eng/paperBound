@@ -1,0 +1,71 @@
+{
+  "generator": "built-in image_gen",
+  "assets": [
+    {
+      "name": "paperMessengers",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-9d8cf8b7-ed9a-4294-9c3b-249c54f88621.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: a cream folded paper airplane with ink fold lines, three banking poses pointing right. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-paperMessengers.png"
+    },
+    {
+      "name": "marginCreatures",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-99a8f15f-8294-4cc5-bb8a-12f9cc1cf544.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: an original tiny charcoal fuzzy woodland dust creature with curious cream eyes and spindly feet, three poses: peeking, walking, resting. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-marginCreatures.png"
+    },
+    {
+      "name": "pixieDust",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-4faa8756-885c-48e4-b95b-1e40662f4954.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: three irregular gold fairy sparkle flecks, warm hand-painted twinkles with delicate transparent soft glow. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-pixieDust.png"
+    },
+    {
+      "name": "wanderingWisps",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-8927881d-902d-46f7-a718-1c4554e03c7f.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: an original blue will-o-the-wisp spirit with a tapered curling tail, three subtly different hovering poses with soft translucent glow. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-wanderingWisps.png"
+    },
+    {
+      "name": "enchantedButterflies",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-4bb4752d-b477-4be5-b021-1bf5c91b323c.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: an ochre gold butterfly with delicate ink wing markings, three wingbeat poses: open, halfway, folded. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-enchantedButterflies.png"
+    },
+    {
+      "name": "fallingRosePetals",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-0083ddcf-e38d-45e1-9763-f07a1c0d7808.png",
+      "prompt": "Use case: illustration-story. Asset: production transparent sprite strip for a quiet storybook reader app. Subject: a single velvety muted red rose petal in three tumbling orientations. Exactly THREE poses in ONE horizontal row in three equal square cells, centers at 1/6, 1/2, 5/6 of width. Each subject entirely inside its cell with generous transparent padding. Plain genuinely transparent background, preserve alpha, no backdrop, no checkerboard, no lettering or labels. Simple charming hand-inked watercolor illustration, clean recognizable silhouette at 24 points, restrained detail, no 3D, no photorealism, no generic circles or placeholder geometry. Landscape 3:1 strip. Consistent subject scale across all cells.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-fallingRosePetals.png"
+    },
+    {
+      "name": "floatingLanterns",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-68967df8-74e0-47f9-bafd-3df673074aef.png",
+      "prompt": "Use case: illustration-story. Create a transparent horizontal sprite strip, exactly three equal square cells in one row with three poses or variants of a tiny warm amber floating paper sky lantern, three gently tilting poses, simple ink seams and soft glow. Simple hand-drawn watercolor and pen storybook artwork for a reading app, recognizable small silhouettes, consistent size, transparent padding all around each cell. Genuine alpha transparent background, no text, no checkerboard, no backdrop. Landscape 3:1.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-floatingLanterns.png"
+    },
+    {
+      "name": "wonderlandCards",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-264e6bb2-d55b-48e3-a3ad-bf7eaeb42cd6.png",
+      "prompt": "Use case: illustration-story. Create a transparent horizontal sprite strip, exactly three equal square cells in one row with three poses or variants of an original little cream playing-card soldier with red heart motif, ink arms and boots, three walking poses facing right, no text or numerals. Simple hand-drawn watercolor and pen storybook artwork for a reading app, recognizable small silhouettes, consistent size, transparent padding all around each cell. Genuine alpha transparent background, no text, no checkerboard, no backdrop. Landscape 3:1.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-wonderlandCards.png"
+    },
+    {
+      "name": "winterMargins",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-5c1e9245-86f0-42bb-bf93-66c393ce8daa.png",
+      "prompt": "Use case: illustration-story. Create a transparent horizontal sprite strip, exactly three equal square cells in one row with three poses or variants of three delicate pale blue-white six-branched snow crystals with distinct organic icy shapes. Simple hand-drawn watercolor and pen storybook artwork for a reading app, recognizable small silhouettes, consistent size, transparent padding all around each cell. Genuine alpha transparent background, no text, no checkerboard, no backdrop. Landscape 3:1.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-winterMargins.png"
+    },
+    {
+      "name": "littleHearthSpirit",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-5f065328-d910-4ff3-aa17-55d9380c05f5.png",
+      "prompt": "Use case: illustration-story. Create a transparent horizontal sprite strip, exactly three equal square cells in one row with three poses or variants of an original tiny friendly amber hearth flame with small dark expressive eyes, three poses: resting, stretching, yawning, warm soft edges. Simple hand-drawn watercolor and pen storybook artwork for a reading app, recognizable small silhouettes, consistent size, transparent padding all around each cell. Genuine alpha transparent background, no text, no checkerboard, no backdrop. Landscape 3:1.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-littleHearthSpirit.png"
+    },
+    {
+      "name": "winterFrost",
+      "path": "/Users/franciscolopez/.codex/generated_images/01a0d0da-d34d-7b12-ae4c-a9e20e2415fe/exec-c6a0cbbc-2101-4d6e-8e5c-045748201971.png",
+      "prompt": "Use case: illustration-story. Create a transparent horizontal sprite strip, exactly three equal square cells in one row with three poses or variants of three delicate pale blue watercolor frost corner ornaments, fernlike ice branches in L shapes, no snowflakes. Simple hand-drawn watercolor and pen storybook artwork for a reading app, recognizable small silhouettes, consistent size, transparent padding all around each cell. Genuine alpha transparent background, no text, no checkerboard, no backdrop. Landscape 3:1.",
+      "bundledPath": "Paperbound/Resources/PageEffects/effect-winterFrost.png"
+    }
+  ]
+}

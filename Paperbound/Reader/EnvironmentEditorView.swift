@@ -14,18 +14,25 @@ struct EnvironmentEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var previewReplayToken = 0
-    @State private var previewFootstepReplayToken = 0
-    @State private var previewFootstepVisitID = UUID()
-    @State private var previewFootstepVisit: FootstepVisit?
+    @State private var previewPageEffectVisitID = UUID()
+    @State private var previewPageEffectVisit: PageEffectVisit?
 
     var body: some View {
         NavigationStack {
-            List {
-                inkSection
-                pageEffectsSection
-                defaultsSection
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Text effects").font(.caption).foregroundStyle(.secondary)
+                    TextEffectPicker(selection: bind(\.ink))
+                    previewRow
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+                List {
+                    pageEffectsSection
+                    defaultsSection
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
             .navigationTitle("Reading environment")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -58,8 +65,8 @@ struct EnvironmentEditorView: View {
                         pageIdentity: "\(model.book.id.uuidString)|\(model.engine?.stablePageID(for: model.currentLocation) ?? "pdf:\(model.currentPageIndex)")",
                         isPreview: true,
                         replayToken: previewReplayToken,
-                        footstepVisitID: model.environment.footstepsEnabled
-                            ? previewFootstepVisitID : nil,
+                        pageEffectVisitID: model.environment.pageEffect.isAnimated
+                            ? previewPageEffectVisitID : nil,
                         onPaperReady: { pageIdentity, renderToken, visitID in
                             previewPaperReady(
                                 pageIdentity: pageIdentity,
@@ -68,13 +75,14 @@ struct EnvironmentEditorView: View {
                             )
                         }
                     )
-                    if model.environment.footstepsEnabled,
-                       let visit = previewFootstepVisit,
+                    if model.environment.pageEffect.isAnimated, !reduceMotion,
+                       let visit = previewPageEffectVisit,
                        visit.startedAt != nil {
-                        FootstepOverlayView(
+                        PageEffectOverlayView(
+                            effect: model.environment.pageEffect,
                             visit: visit,
                             seed: StableHash.hash(
-                                "\(model.book.id)|preview|\(model.currentPageIndex)|\(previewFootstepReplayToken)"
+                                "\(model.book.id)|preview|\(model.currentPageIndex)|\(model.environment.pageEffect.rawValue)"
                             ),
                             surfaces: [CGRect(origin: .zero, size: previewSize)],
                             reservedRegions: [],
@@ -94,11 +102,19 @@ struct EnvironmentEditorView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Preview")
                     .font(.headline)
-                Text(model.environment.ink == .enchanted ? "Enchanted Ink" : "Instant text")
+                Text(model.environment.pageEffect.title)
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(model.environment.ink == .enchanted ? "Enchanted Ink · 3–4 seconds" : "Instant text")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if model.environment.pageEffect.isAnimated {
+                    Button("Replay page effect") { resetPreviewPageEffects() }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("replay-page-effect")
+                        .disabled(reduceMotion)
+                }
                 if model.environment.ink == .enchanted {
-                    Button("Replay effect") { previewReplayToken += 1 }
+                    Button("Replay ink") { previewReplayToken += 1 }
                         .buttonStyle(.borderless)
                         .accessibilityIdentifier("reader.replayInk")
                         .disabled(reduceMotion)
@@ -107,8 +123,8 @@ struct EnvironmentEditorView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 6)
-        .onChange(of: model.currentPageIndex) { _, _ in resetPreviewFootsteps() }
-        .onChange(of: model.environment.footstepsEnabled) { _, _ in resetPreviewFootsteps() }
+        .onChange(of: model.currentPageIndex) { _, _ in resetPreviewPageEffects() }
+        .onChange(of: model.environment.pageEffect) { _, _ in resetPreviewPageEffects() }
     }
 
     private var previewSize: CGSize {
@@ -118,45 +134,22 @@ struct EnvironmentEditorView: View {
 
     // MARK: - Effects
 
-    private var inkSection: some View {
-        Section {
-            TextEffectPicker(selection: bind(\.ink))
-            previewRow
-        } header: {
-            Text("Text effects")
-        } footer: {
-            Text(reduceMotion && model.environment.ink == .enchanted
-                ? "Reduce Motion is on. Ink animation is paused and the finished page is shown."
-                : model.environment.ink == .enchanted
-                    ? "Ink bleeds into blank paper, gradually filling letters and illustrations over 3–4 seconds. The full page plays after you close settings."
-                    : "Printed content appears immediately when a page turns. The PDF’s original colors are preserved.")
-        }
-    }
-
     private var pageEffectsSection: some View {
         Section("Page effects") {
-            Toggle("Footsteps", isOn: bind(\.footstepsEnabled))
-            if model.environment.footstepsEnabled {
-                Button("Replay footsteps") {
-                    previewFootstepReplayToken += 1
-                    resetPreviewFootsteps()
-                }
-                Text("Three trails of small ink shoeprints wander across the visible paper and may cross between pages on Duo.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            if reduceMotion { Text("Reduce Motion is on. Page animations are disabled.").font(.caption) }
+            PageEffectPicker(selection: bind(\.pageEffect))
         }
     }
 
-    private func resetPreviewFootsteps() {
-        previewFootstepVisit = nil
-        previewFootstepVisitID = UUID()
+    private func resetPreviewPageEffects() {
+        previewPageEffectVisit = nil
+        previewPageEffectVisitID = UUID()
     }
 
     private func previewPaperReady(pageIdentity: String, renderToken: String, visitID: UUID) {
-        guard model.environment.footstepsEnabled,
-              visitID == previewFootstepVisitID else { return }
-        var visit = previewFootstepVisit ?? FootstepVisit(
+        guard model.environment.pageEffect.isAnimated,
+              visitID == previewPageEffectVisitID else { return }
+        var visit = previewPageEffectVisit ?? PageEffectVisit(
             unit: 0, visitID: visitID,
             pageRenderTokens: [pageIdentity: renderToken]
         )
@@ -165,7 +158,7 @@ struct EnvironmentEditorView: View {
             pageIdentity: pageIdentity, renderToken: renderToken,
             visitID: visitID, at: Date()
         ) else { return }
-        previewFootstepVisit = visit
+        previewPageEffectVisit = visit
     }
 
     private var defaultsSection: some View {

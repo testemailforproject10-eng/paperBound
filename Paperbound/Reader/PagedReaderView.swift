@@ -35,13 +35,13 @@ struct PagedReaderView: View {
     @State private var didSettleInitialLayout = false
     @State private var scrollOffset: CGFloat = 0
     @State private var settledGeometryKey: String?
-    @State private var footstepVisits: [Int: FootstepVisit] = [:]
-    @State private var incomingFootstepUnit: Int?
+    @State private var pageEffectVisits: [Int: PageEffectVisit] = [:]
+    @State private var incomingPageEffectUnit: Int?
     @State private var pagingInProgress = false
     @State private var zoomInProgress = false
-    @State private var footstepGeometryTransition = false
-    @State private var footstepGeometryRevision = 0
-    @State private var footstepReplanTask: Task<Void, Never>?
+    @State private var pageEffectGeometryTransition = false
+    @State private var pageEffectGeometryRevision = 0
+    @State private var pageEffectReplanTask: Task<Void, Never>?
     @State private var didInitialize = false
     @State private var zoom: CGFloat = 1
     @State private var committedZoom: CGFloat = 1
@@ -199,15 +199,15 @@ struct PagedReaderView: View {
         model.paging.finish(reason: "layout or lifecycle transition")
     }
 
-    private func makeFootstepVisit(
+    private func makePageEffectVisit(
         for unit: Int, in size: CGSize, insets: EdgeInsets,
         reservedRegions: [CGRect], fraction: CGFloat
     ) {
-        guard model.environment.footstepsEnabled, !reduceMotion,
+        guard model.environment.pageEffect.isAnimated, !reduceMotion,
               scenePhase == .active, unit >= 0, unit < unitCount else { return }
-        if var existing = footstepVisits[unit] {
+        if var existing = pageEffectVisits[unit] {
             existing.setVisibleFraction(fraction, at: Date())
-            footstepVisits[unit] = existing
+            pageEffectVisits[unit] = existing
             return
         }
         let rects = DeviceLayoutCoordinator.surfaceRects(
@@ -223,41 +223,41 @@ struct PagedReaderView: View {
                 for: request, environment: model.environment
             )
         }
-        var visit = FootstepVisit(unit: unit, visitID: UUID(), pageRenderTokens: tokens)
+        var visit = PageEffectVisit(unit: unit, visitID: UUID(), pageRenderTokens: tokens)
         visit.setVisibleFraction(fraction, at: Date())
-        footstepVisits[unit] = visit
+        pageEffectVisits[unit] = visit
     }
 
-    private func footstepPaperReady(
+    private func pageEffectPaperReady(
         pageIdentity: String, renderToken: String, visitID: UUID, in unit: Int
     ) {
-        guard var visit = footstepVisits[unit] else { return }
+        guard var visit = pageEffectVisits[unit] else { return }
         guard visit.paperReady(
             pageIdentity: pageIdentity, renderToken: renderToken,
             visitID: visitID, at: Date()
         ) else { return }
         if visit.startedAt != nil {
-            InkMetrics.trace("Footsteps unit \(unit) started")
+            InkMetrics.trace("PageEffects unit \(unit) started")
         }
-        footstepVisits[unit] = visit
+        pageEffectVisits[unit] = visit
     }
 
-    private func resetFootstepsForGeometry(
+    private func resetPageEffectsForGeometry(
         in size: CGSize, insets: EdgeInsets, reservedRegions: [CGRect]
     ) {
-        guard model.environment.footstepsEnabled else { return }
-        footstepGeometryRevision += 1
-        let revision = footstepGeometryRevision
-        withAnimation(.easeOut(duration: 0.2)) { footstepGeometryTransition = true }
-        footstepReplanTask?.cancel()
-        footstepReplanTask = Task { @MainActor in
+        guard model.environment.pageEffect.isAnimated else { return }
+        pageEffectGeometryRevision += 1
+        let revision = pageEffectGeometryRevision
+        withAnimation(.easeOut(duration: 0.2)) { pageEffectGeometryTransition = true }
+        pageEffectReplanTask?.cancel()
+        pageEffectReplanTask = Task { @MainActor in
             do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
-            guard !Task.isCancelled, revision == footstepGeometryRevision else { return }
-            footstepVisits.removeAll()
-            incomingFootstepUnit = nil
-            footstepGeometryTransition = false
+            guard !Task.isCancelled, revision == pageEffectGeometryRevision else { return }
+            pageEffectVisits.removeAll()
+            incomingPageEffectUnit = nil
+            pageEffectGeometryTransition = false
             let current = settledUnit ?? unit(forPageIndex: model.currentPageIndex)
-            makeFootstepVisit(
+            makePageEffectVisit(
                 for: current, in: size, insets: insets,
                 reservedRegions: reservedRegions, fraction: 1
             )
@@ -346,7 +346,7 @@ struct PagedReaderView: View {
                 visibleUnit = initial
                 model.paging.relocate(unit: initial)
                 didInitialize = true
-                makeFootstepVisit(
+                makePageEffectVisit(
                     for: initial, in: size, insets: insets,
                     reservedRegions: surfaceReserved, fraction: 1
                 )
@@ -359,7 +359,7 @@ struct PagedReaderView: View {
                 )
                 // Keep the reader on the same page across a resize or a fold.
                 finishActiveRevealForLayoutChange()
-                resetFootstepsForGeometry(in: newSize, insets: insets, reservedRegions: surfaceReserved)
+                resetPageEffectsForGeometry(in: newSize, insets: insets, reservedRegions: surfaceReserved)
                 let current = unit(forPageIndex: model.currentPageIndex)
                 if visibleUnit != current {
                     visibleUnit = current
@@ -373,19 +373,19 @@ struct PagedReaderView: View {
                     divisionRegions: surfaceDivision
                 )
                 finishActiveRevealForLayoutChange()
-                resetFootstepsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
+                resetPageEffectsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
             }
             .onChange(of: displayScale) { _, _ in
                 finishActiveRevealForLayoutChange()
-                resetFootstepsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
+                resetPageEffectsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
                     finishActiveRevealForLayoutChange()
-                    footstepVisits.removeAll()
-                    incomingFootstepUnit = nil
+                    pageEffectVisits.removeAll()
+                    incomingPageEffectUnit = nil
                 } else {
-                    makeFootstepVisit(
+                    makePageEffectVisit(
                         for: settledUnit ?? unit(forPageIndex: model.currentPageIndex),
                         in: size, insets: insets, reservedRegions: surfaceReserved,
                         fraction: 1
@@ -395,9 +395,9 @@ struct PagedReaderView: View {
             .onChange(of: reduceMotion) { _, isEnabled in
                 if isEnabled {
                     finishActiveRevealForLayoutChange()
-                    footstepVisits.removeAll()
+                    pageEffectVisits.removeAll()
                 } else {
-                    makeFootstepVisit(
+                    makePageEffectVisit(
                         for: settledUnit ?? unit(forPageIndex: model.currentPageIndex),
                         in: size, insets: insets, reservedRegions: surfaceReserved,
                         fraction: 1
@@ -441,14 +441,14 @@ struct PagedReaderView: View {
                         pageWidth: size.width, unitCount: unitCount
                     ) {
                         if incoming.unit == settledUnit {
-                            if let abandoned = incomingFootstepUnit,
+                            if let abandoned = incomingPageEffectUnit,
                                abandoned != settledUnit {
-                                footstepVisits.removeValue(forKey: abandoned)
+                                pageEffectVisits.removeValue(forKey: abandoned)
                             }
-                            incomingFootstepUnit = nil
+                            incomingPageEffectUnit = nil
                         } else {
-                            incomingFootstepUnit = incoming.unit
-                            makeFootstepVisit(
+                            incomingPageEffectUnit = incoming.unit
+                            makePageEffectVisit(
                                 for: incoming.unit, in: size, insets: insets,
                                 reservedRegions: surfaceReserved, fraction: incoming.fraction
                             )
@@ -468,9 +468,9 @@ struct PagedReaderView: View {
                         model.reportVisible(pageIndex: isSpread ? actual * 2 : actual)
                         if self.visibleUnit != actual { self.visibleUnit = actual }
                     }
-                    footstepVisits = footstepVisits.filter { $0.key == visibleUnit }
-                    incomingFootstepUnit = nil
-                    makeFootstepVisit(
+                    pageEffectVisits = pageEffectVisits.filter { $0.key == visibleUnit }
+                    incomingPageEffectUnit = nil
+                    makePageEffectVisit(
                         for: visibleUnit, in: size, insets: insets,
                         reservedRegions: surfaceReserved, fraction: 1
                     )
@@ -493,11 +493,11 @@ struct PagedReaderView: View {
                         model.paging.disable()
                     }
                 }
-                if oldEnvironment.footstepsEnabled != newEnvironment.footstepsEnabled {
-                    footstepVisits.removeAll()
-                    incomingFootstepUnit = nil
-                    if newEnvironment.footstepsEnabled {
-                        makeFootstepVisit(
+                if oldEnvironment.pageEffect != newEnvironment.pageEffect {
+                    pageEffectVisits.removeAll()
+                    incomingPageEffectUnit = nil
+                    if newEnvironment.pageEffect.isAnimated {
+                        makePageEffectVisit(
                             for: settledUnit ?? unit(forPageIndex: model.currentPageIndex),
                             in: size, insets: insets, reservedRegions: surfaceReserved,
                             fraction: 1
@@ -508,7 +508,7 @@ struct PagedReaderView: View {
             .onChange(of: model.layout.mode) { _, _ in
                 let current = unit(forPageIndex: model.currentPageIndex)
                 finishActiveRevealForLayoutChange()
-                resetFootstepsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
+                resetPageEffectsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
                 if visibleUnit != current {
                     visibleUnit = current
                 }
@@ -527,15 +527,15 @@ struct PagedReaderView: View {
                 )
                 if model.layout.changesPagePlacement(comparedTo: previousLayout) {
                     finishActiveRevealForLayoutChange()
-                    resetFootstepsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
+                    resetPageEffectsForGeometry(in: size, insets: insets, reservedRegions: surfaceReserved)
                 }
             }
             .onDisappear {
-                footstepReplanTask?.cancel()
-                footstepReplanTask = nil
+                pageEffectReplanTask?.cancel()
+                pageEffectReplanTask = nil
                 model.paging.finish(reason: "reader disappeared")
-                footstepVisits.removeAll()
-                incomingFootstepUnit = nil
+                pageEffectVisits.removeAll()
+                incomingPageEffectUnit = nil
             }
         }
     }
@@ -631,7 +631,7 @@ struct PagedReaderView: View {
                         pageRequest: pageRequest,
                         isPageVisible: unit == (visibleUnit ?? self.unit(forPageIndex: model.currentPageIndex))
                             || unit == settledUnit || unit == incomingRevealUnit
-                            || unit == incomingFootstepUnit,
+                            || unit == incomingPageEffectUnit,
                         revealActivation: revealActivation,
                         onImageReady: { identity, seed in
                             model.paging.readiness(identity, seed: seed, at: Date())
@@ -640,9 +640,9 @@ struct PagedReaderView: View {
                             model.paging.completed(identity, startedAt: startedAt, at: Date())
                         },
                         onFirstInkFrame: { identity in model.paging.firstFrame(identity) },
-                        footstepVisitID: footstepVisits[unit]?.visitID,
+                        pageEffectVisitID: pageEffectVisits[unit]?.visitID,
                         onPaperReady: { pageIdentity, renderToken, visitID in
-                            footstepPaperReady(
+                            pageEffectPaperReady(
                                 pageIdentity: pageIdentity, renderToken: renderToken,
                                 visitID: visitID, in: unit
                             )
@@ -660,10 +660,11 @@ struct PagedReaderView: View {
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            if model.environment.footstepsEnabled,
+            if model.environment.pageEffect.isAnimated,
                !reduceMotion,
-               let visit = footstepVisits[unit], visit.startedAt != nil {
-                FootstepOverlayView(
+               let visit = pageEffectVisits[unit], visit.startedAt != nil {
+                PageEffectOverlayView(
+                    effect: model.environment.pageEffect,
                     visit: visit,
                     seed: StableHash.hash("\(model.book.id)|\(unit)|\(visit.visitID)"),
                     surfaces: overlayRects,
@@ -671,10 +672,11 @@ struct PagedReaderView: View {
                     size: size,
                     isDarkPaper: model.environment.invertsInk,
                     isPaused: pagingInProgress || zoomInProgress
-                        || footstepGeometryTransition || scenePhase != .active
+                        || pageEffectGeometryTransition || scenePhase != .active
+                        || model.activePanel != nil || model.isPanelPresented
                 )
                 .id(visit.visitID)
-                .opacity(footstepGeometryTransition ? 0 : 1)
+                .opacity(pageEffectGeometryTransition ? 0 : 1)
             }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
