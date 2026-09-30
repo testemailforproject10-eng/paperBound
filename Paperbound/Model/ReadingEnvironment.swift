@@ -348,6 +348,8 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
     var motion: MotionStyle
     /// The book as an object on the shelf.
     var cover: CoverStyle
+    /// A live overlay. It does not change composited page pixels.
+    var footstepsEnabled: Bool
 
     init(
         id: String = UUID().uuidString,
@@ -362,6 +364,7 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         ink: InkBehavior = .instant,
         motion: MotionStyle = .still,
         cover: CoverStyle = .plain,
+        footstepsEnabled: Bool = false,
         generatorVersion: Int = ReadingEnvironment.currentGeneratorVersion
     ) {
         self.id = id
@@ -376,6 +379,7 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         self.ink = ink
         self.motion = motion
         self.cover = cover
+        self.footstepsEnabled = footstepsEnabled
         self.generatorVersion = generatorVersion
     }
 
@@ -397,6 +401,7 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
         self.ink = try container.decodeIfPresent(InkBehavior.self, forKey: .ink) ?? .instant
         self.motion = try container.decodeIfPresent(MotionStyle.self, forKey: .motion) ?? .still
         self.cover = try container.decodeIfPresent(CoverStyle.self, forKey: .cover) ?? .plain
+        self.footstepsEnabled = try container.decodeIfPresent(Bool.self, forKey: .footstepsEnabled) ?? false
     }
 
     /// Bump whenever the generator's rules or budgets change, so books rendered
@@ -464,6 +469,17 @@ struct ReadingEnvironment: Codable, Hashable, Identifiable, Sendable {
     /// environment that answers `false` keeps exactly today's single-bake path.
     var needsLiveLayer: Bool {
         motion.needsLiveLayer || ink.needsLiveLayer
+    }
+
+    /// Only the two supported opt-in effects survive old saved appearances.
+    /// Legacy fields remain decodable, but cannot style the live reader.
+    var effectsOnly: ReadingEnvironment {
+        var result = Self.cleanPaper
+        result.id = "reader.effects"
+        result.name = "Reading effects"
+        result.ink = ink == .enchanted ? .enchanted : .instant
+        result.footstepsEnabled = footstepsEnabled
+        return result
     }
 
     /// The reversible override: same material and presentation, nothing removed.
@@ -546,7 +562,7 @@ extension ReadingEnvironment {
         .nightPaper
     ]
 
-    static let `default` = ReadingEnvironment.softCream
+    static let `default` = ReadingEnvironment.cleanPaper.effectsOnly
 }
 
 // MARK: - Themed presets

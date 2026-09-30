@@ -251,8 +251,13 @@ final class PDFEngineTests: XCTestCase {
     func testAspectRatioMatchesTheSampleBooksPageShape() async throws {
         let engine = try makeEngine()
         try await engine.open()
-        let ratio = engine.aspectRatio(at: .pdfPage(index: 0, yOffset: 0))
-        XCTAssertEqual(ratio, 648.0 / 432.0, accuracy: 0.01)
+        for index in [0, engine.pageCount / 2, engine.pageCount - 1] {
+            let location = ReadingLocation.pdfPage(index: index, yOffset: 0)
+            let box = try XCTUnwrap(engine.pdfDocument?.page(at: index)?.bounds(for: .cropBox))
+            let ratio = engine.aspectRatio(at: location)
+            XCTAssertEqual(ratio, Double(box.height / box.width), accuracy: 0.01)
+            XCTAssertEqual(engine.aspectRatio(at: location), ratio)
+        }
     }
 
     func testClosingReleasesTheDocumentButKeepsGeometry() async throws {
@@ -262,7 +267,7 @@ final class PDFEngineTests: XCTestCase {
         engine.close()
         XCTAssertFalse(engine.isOpen)
         XCTAssertNil(engine.pdfDocument)
-        // Page geometry comes from the worker, which outlives close().
+        // The page count remains available without opening every page.
         XCTAssertEqual(engine.pageCount, pageCount)
     }
 }

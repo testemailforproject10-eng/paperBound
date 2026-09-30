@@ -236,6 +236,18 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ReadingEnvironment.self, from: data), original)
     }
 
+    func testEnchantedInkPersistsAndLegacyEnvironmentDefaultsToInstant() throws {
+        var enchanted = ReadingEnvironment.libraryHardcover
+        enchanted.ink = .enchanted
+        let data = try JSONEncoder().encode(enchanted)
+        XCTAssertEqual(try JSONDecoder().decode(ReadingEnvironment.self, from: data), enchanted)
+
+        var legacyFields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacyFields.removeValue(forKey: "ink")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyFields)
+        XCTAssertEqual(try JSONDecoder().decode(ReadingEnvironment.self, from: legacyData).ink, .instant)
+    }
+
     func testIntensityIsClampedOnInit() {
         let high = ReadingEnvironment(
             name: "x", material: .cream, condition: .damaged,
@@ -303,7 +315,7 @@ final class ModelTests: XCTestCase {
         book.savedLocation = .pdfPage(index: 9, yOffset: 0.5)
         book.savedEnvironment = .oldJournal
         XCTAssertEqual(book.savedLocation, .pdfPage(index: 9, yOffset: 0.5))
-        XCTAssertEqual(book.savedEnvironment, .oldJournal)
+        XCTAssertEqual(book.savedEnvironment, ReadingEnvironment.oldJournal.effectsOnly)
     }
 
     func testFormatParsingIsCaseInsensitive() {

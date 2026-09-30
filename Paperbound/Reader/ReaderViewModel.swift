@@ -71,11 +71,17 @@ final class ReaderViewModel {
         didSet { if mode != oldValue { persist() } }
     }
 
+    private var storedEnvironment: ReadingEnvironment
     var environment: ReadingEnvironment {
-        didSet {
-            guard environment != oldValue else { return }
-            provider?.invalidateAll()
-            book.savedEnvironment = environment
+        get { storedEnvironment }
+        set {
+            let normalized = newValue.effectsOnly
+            guard normalized != storedEnvironment else { return }
+            if normalized.renderIdentity != storedEnvironment.renderIdentity {
+                provider?.invalidateAll()
+            }
+            storedEnvironment = normalized
+            book.savedEnvironment = normalized
             persist()
         }
     }
@@ -83,10 +89,18 @@ final class ReaderViewModel {
     private(set) var currentLocation: ReadingLocation = .start
     private(set) var pageCount: Int = 0
     private(set) var outline: [OutlineItem] = []
+    private(set) var isLoadingOutline = false
+    private var outlineLoaded = false
     private(set) var capabilities: ReaderCapabilities = []
 
     var layout: ReadingSurfaceLayout = .singlePage
-    var activePanel: ReaderPanel?
+    let paging = ReaderPagingCoordinator()
+    private(set) var navigationRequest: ReaderNavigationRequest?
+    var sliderSelection: Double?
+    var isPanelPresented = false
+    var activePanel: ReaderPanel? {
+        didSet { if activePanel != nil { isPanelPresented = true } }
+    }
     var showsControls = true
 
     /// Watches which display the scene is on, so folding a device is a
@@ -113,7 +127,8 @@ final class ReaderViewModel {
         self.settings = settings
         self.store = store
         self.context = context
-        self.environment = book.savedEnvironment ?? settings.defaultEnvironment
+        self.storedEnvironment = settings.environment(for: book)
+        if book.environmentData != nil { book.savedEnvironment = storedEnvironment }
 
         #if DEBUG
         // `-paperbound-demo-mode document` opens straight into the PDFKit
@@ -124,14 +139,24 @@ final class ReaderViewModel {
            let requested = ReadingMode(rawValue: arguments[index + 1]) {
             self.mode = requested
         }
+        // Reproduce ink startup without changing the default environment.
+        if arguments.contains("-paperbound-demo-ink") {
+            self.environment.ink = .enchanted
+        }
+        if arguments.contains("-paperbound-demo-footsteps") {
+            self.environment.footstepsEnabled = true
+        }
         #endif
     }
 
     // MARK: Lifecycle
 
     func load() async {
+        let timing = InkMetrics.begin("Reader opening")
+        defer { InkMetrics.end("Reader opening", timing) }
         isLoading = true
         loadError = nil
+        if environment.ink == .enchanted { InkGPUResources.prewarm() }
         do {
             let url = store.fileURL(for: book)
             let engine = try PDFReadingEngine(
@@ -146,8 +171,6 @@ final class ReaderViewModel {
             self.pageCount = engine.pageCount
             self.capabilities = engine.capabilities
             self.currentLocation = engine.currentLocation()
-            self.outline = engine.outline()
-
             if book.pageCount != engine.pageCount {
                 book.pageCount = engine.pageCount
             }
@@ -167,6 +190,20 @@ final class ReaderViewModel {
         provider?.invalidateAll()
     }
 
+    func loadOutlineIfNeeded() async {
+        guard !outlineLoaded, !isLoadingOutline, let engine else { return }
+        isLoadingOutline = true
+        // Let the contents sheet appear before PDFKit walks a large outline.
+        await Task.yield()
+        guard !Task.isCancelled, engine.isOpen else {
+            isLoadingOutline = false
+            return
+        }
+        outline = engine.outline()
+        outlineLoaded = true
+        isLoadingOutline = false
+    }
+
     // MARK: Geometry
 
     var pageAspectRatio: Double {
@@ -178,22 +215,30 @@ final class ReaderViewModel {
     /// what the coordinator actually saw.
     private(set) var lastSurfaceSize: CGSize = .zero
 
-    func updateLayout(for size: CGSize) {
+    func updateLayout(
+        for size: CGSize,
+        hardwareReservedRegions: [CGRect] = [],
+        divisionRegions: [CGRect] = []
+    ) {
         lastSurfaceSize = size
         // A fold shows up as a layout change, so this is exactly the moment to
         // re-read the display.
         display.refresh()
 
-        let next = DeviceLayoutCoordinator.layout(
+        var next = DeviceLayoutCoordinator.layout(
             surfaceSize: size,
             pageAspectRatio: pageAspectRatio,
             presentation: environment.presentation,
-            preference: settings.spreadPreference,
+            preference: .automatic,
             provider: HingePostureProvider(
                 hinge: hinge.snapshot,
                 display: display.snapshot
-            )
+            ),
+            divisionRegions: divisionRegions
         )
+        for region in hardwareReservedRegions where !next.reservedRegions.contains(region) {
+            next.reservedRegions.append(region)
+        }
         if next != layout { layout = next }
     }
 
@@ -212,9 +257,9 @@ final class ReaderViewModel {
         return "Page \(engine.label(for: currentLocation)) of \(max(1, engine.pageCount))"
     }
 
-    func go(toPageIndex index: Int) {
+    func go(toPageIndex index: Int, source: ReaderNavigationRequest.Source = .destination) {
         guard let engine, index >= 0, index < engine.pageCount else { return }
-        setLocation(.pdfPage(index: index, yOffset: 0))
+        setLocation(.pdfPage(index: index, yOffset: 0), source: source)
     }
 
     func go(to location: ReadingLocation) {
@@ -222,9 +267,9 @@ final class ReaderViewModel {
         setLocation(location)
     }
 
-    func advance(by delta: Int) {
+    func advance(by delta: Int, source: ReaderNavigationRequest.Source = .edgeTap) {
         guard let engine, let next = engine.location(byAdvancing: currentLocation, pages: delta) else { return }
-        setLocation(next)
+        setLocation(next, source: source)
     }
 
     /// Called by the paging surface when the reader swipes.
@@ -233,7 +278,11 @@ final class ReaderViewModel {
         setLocation(.pdfPage(index: pageIndex, yOffset: 0), announce: false)
     }
 
-    private func setLocation(_ location: ReadingLocation, announce: Bool = true) {
+    private func setLocation(_ location: ReadingLocation, announce: Bool = true,
+                             source: ReaderNavigationRequest.Source = .destination) {
+        if announce, location.pdfPageIndex != currentPageIndex {
+            navigationRequest = ReaderNavigationRequest(pageIndex: location.pdfPageIndex ?? 0, source: source)
+        }
         currentLocation = location
         Task { try? await engine?.go(to: location) }
         book.savedLocation = location
@@ -245,15 +294,13 @@ final class ReaderViewModel {
         }
     }
 
-    // MARK: Environment
-
-    func applyPreset(_ preset: ReadingEnvironment) {
-        // Keep the reader's own intensity when they switch material families,
-        // otherwise every preset tap silently resets a dialled-in setting.
-        var next = preset
-        next.intensity = preset.condition == .pristine ? 0 : environment.intensity
-        environment = next
+    func commitSlider() {
+        guard let selection = sliderSelection else { return }
+        sliderSelection = nil
+        go(toPageIndex: Int(selection.rounded()), source: .slider)
     }
+
+    // MARK: Environment
 
     func setAsGlobalDefault() {
         settings.defaultEnvironment = environment

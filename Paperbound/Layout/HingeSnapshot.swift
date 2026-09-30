@@ -4,11 +4,10 @@
 //
 //  What the app can learn from the hinge itself.
 //
-//  iOS 27.1 added `UIHingeInteraction`, and it is the first release to do so:
-//  the iOS 27.0 SDK has no hinge symbols outside private IOKit, which is why
-//  this app read posture from display identity alone until now. The SwiftUI
-//  spelling that was trailed in beta — `onHingeChange` — did not ship; what
-//  shipped is a UIKit interaction you add to a view:
+//  iOS 27.1 adds UIKit's `UIHingeInteraction` and SwiftUI's `onHingeChange`.
+//  The selected 27.1 SDK declares both APIs. This reader retains its existing
+//  UIKit integration because the interaction provides the hinge updates this
+//  observer already consumes:
 //
 //      UIHinge.status   closed · partiallyOpen · fullyOpen · unknown
 //      UIHinge.angle    radians
@@ -167,7 +166,8 @@ final class HingeObserver {
 
 /// A zero-size view whose only job is to carry the hinge interaction into the
 /// hierarchy. `UIHingeInteraction` is a `UIInteraction`, so it needs a real
-/// `UIView` to live on; there is no SwiftUI modifier for it in 27.1.
+/// `UIView` to live on. SwiftUI also exposes `onHingeChange` in iOS 27.1, but
+/// the reader keeps this interaction as its current source of hinge updates.
 struct HingeObservationView: UIViewRepresentable {
 
     let observer: HingeObserver

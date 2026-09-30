@@ -207,17 +207,38 @@ enum ReadingSurfaceMode: String, Sendable {
     case spread
 }
 
+/// The orientation of an active divider. A vertical divider creates left and
+/// right panels; a horizontal divider creates top and bottom panels.
+enum ReadingDivisionAxis: Sendable, Equatable {
+    case vertical
+    case horizontal
+}
+
 struct ReadingSurfaceLayout: Equatable, Sendable {
     var mode: ReadingSurfaceMode
-    /// Width of the gutter as a fraction of the whole surface.
+    /// Width or height of the gutter as a fraction of the matching surface axis.
     var spineFraction: Double
     /// 0…1 multiplier handed to the compositor for spine shading.
     var spineShadowScale: Double
     var posture: DevicePosture
     var reservedRegions: [CGRect]
+    /// Active fold region, when the window is divided into panels.
+    var divisionRegion: CGRect?
+    var divisionAxis: ReadingDivisionAxis?
     var reportsRealPosture: Bool
     /// Why the posture reads the way it does, for the reader-facing row.
     var postureEvidence: String
+
+    /// Hinge angle changes can adjust shading without moving either page.
+    /// Only these fields alter where a page or its readable region is placed.
+    func changesPagePlacement(comparedTo previous: ReadingSurfaceLayout) -> Bool {
+        mode != previous.mode
+            || spineFraction != previous.spineFraction
+            || posture != previous.posture
+            || reservedRegions != previous.reservedRegions
+            || divisionRegion != previous.divisionRegion
+            || divisionAxis != previous.divisionAxis
+    }
 
     static let singlePage = ReadingSurfaceLayout(
         mode: .single,
@@ -225,6 +246,8 @@ struct ReadingSurfaceLayout: Equatable, Sendable {
         spineShadowScale: 0.55,
         posture: .flat,
         reservedRegions: [],
+        divisionRegion: nil,
+        divisionAxis: nil,
         reportsRealPosture: false,
         postureEvidence: "from window size"
     )
@@ -258,17 +281,23 @@ enum DeviceLayoutCoordinator {
         pageAspectRatio: Double,
         presentation: BookPresentation,
         preference: SpreadPreference,
-        provider: PostureProviding = GeometryPostureProvider()
+        provider: PostureProviding = GeometryPostureProvider(),
+        divisionRegions: [CGRect] = []
     ) -> ReadingSurfaceLayout {
 
         let posture = provider.posture(in: surfaceSize)
-        let reserved = provider.reservedRegions(in: surfaceSize)
+        var reserved = provider.reservedRegions(in: surfaceSize)
+        for region in divisionRegions where !reserved.contains(region) {
+            reserved.append(region)
+        }
         let spineFraction = presentation.spineFraction
+        let division = activeDivision(in: divisionRegions, surfaceSize: surfaceSize)
 
         let spreadFits = spreadIsUsable(
             surfaceSize: surfaceSize,
             pageAspectRatio: pageAspectRatio,
-            spineFraction: spineFraction
+            spineFraction: spineFraction,
+            division: division
         )
 
         let mode: ReadingSurfaceMode
@@ -304,10 +333,14 @@ enum DeviceLayoutCoordinator {
 
         return ReadingSurfaceLayout(
             mode: mode,
-            spineFraction: mode == .spread ? spineFraction : 0,
+            spineFraction: mode == .spread
+                ? (division.map { divisionFraction($0, surfaceSize: surfaceSize) } ?? spineFraction)
+                : 0,
             spineShadowScale: shadowScale,
             posture: posture,
             reservedRegions: reserved,
+            divisionRegion: division?.region,
+            divisionAxis: division?.axis,
             reportsRealPosture: provider.reportsRealPosture,
             postureEvidence: provider.postureEvidence
         )
@@ -357,9 +390,17 @@ enum DeviceLayoutCoordinator {
     private static func spreadIsUsable(
         surfaceSize: CGSize,
         pageAspectRatio: Double,
-        spineFraction: Double
+        spineFraction: Double,
+        division: ActiveDivision?
     ) -> Bool {
         guard surfaceSize.width > 0, surfaceSize.height > 0, pageAspectRatio > 0 else { return false }
+
+        if let division {
+            let pageRects = divisionPageRects(in: surfaceSize, division: division)
+            return pageRects.count == 2 && pageRects.allSatisfy {
+                fittedRect(in: $0, aspectRatio: pageAspectRatio).width >= minimumPageWidth
+            }
+        }
 
         let singleWidth = fittedRect(
             in: CGRect(origin: .zero, size: surfaceSize),
@@ -395,14 +436,87 @@ enum DeviceLayoutCoordinator {
 
         switch layout.mode {
         case .single:
+            if let division = activeDivision(in: layout) {
+                let panels = divisionPageRects(in: size, division: division)
+                if let largest = panels.max(by: { $0.width * $0.height < $1.width * $1.height }) {
+                    return [largest]
+                }
+            }
             return [CGRect(origin: .zero, size: size)]
         case .spread:
+            if let division = activeDivision(in: layout) {
+                return divisionPageRects(in: size, division: division)
+            }
             let gutter = size.width * CGFloat(layout.spineFraction)
             let half = (size.width - gutter) / 2
             return [
                 CGRect(x: 0, y: 0, width: half, height: size.height),
                 CGRect(x: half + gutter, y: 0, width: half, height: size.height)
             ]
+        }
+    }
+
+    private struct ActiveDivision {
+        let region: CGRect
+        let axis: ReadingDivisionAxis
+    }
+
+    private static func activeDivision(in layout: ReadingSurfaceLayout) -> ActiveDivision? {
+        guard let region = layout.divisionRegion, let axis = layout.divisionAxis else { return nil }
+        return ActiveDivision(region: region, axis: axis)
+    }
+
+    private static func activeDivision(in regions: [CGRect], surfaceSize: CGSize) -> ActiveDivision? {
+        guard surfaceSize.width > 0, surfaceSize.height > 0 else { return nil }
+        let bounds = CGRect(origin: .zero, size: surfaceSize)
+        return regions
+            .map { $0.intersection(bounds) }
+            .compactMap { region -> ActiveDivision? in
+                guard !region.isNull, region.width > 0, region.height > 0 else { return nil }
+                let vertical = region.height >= surfaceSize.height * 0.5
+                    && region.minX > 0 && region.maxX < surfaceSize.width
+                let horizontal = region.width >= surfaceSize.width * 0.5
+                    && region.minY > 0 && region.maxY < surfaceSize.height
+                switch (vertical, horizontal) {
+                case (true, false): return ActiveDivision(region: region, axis: .vertical)
+                case (false, true): return ActiveDivision(region: region, axis: .horizontal)
+                case (true, true):
+                    let verticalCoverage = region.height / surfaceSize.height
+                    let horizontalCoverage = region.width / surfaceSize.width
+                    return verticalCoverage >= horizontalCoverage
+                        ? ActiveDivision(region: region, axis: .vertical)
+                        : ActiveDivision(region: region, axis: .horizontal)
+                case (false, false): return nil
+                }
+            }
+            .max(by: { $0.region.height * $0.region.width < $1.region.height * $1.region.width })
+    }
+
+    private static func divisionPageRects(in size: CGSize, division: ActiveDivision) -> [CGRect] {
+        let fold = division.region.intersection(CGRect(origin: .zero, size: size))
+        guard !fold.isNull else { return [] }
+        let panels: [CGRect]
+        switch division.axis {
+        case .vertical:
+            guard fold.width > 0 else { return [] }
+            panels = [
+                CGRect(x: 0, y: 0, width: fold.minX, height: size.height),
+                CGRect(x: fold.maxX, y: 0, width: size.width - fold.maxX, height: size.height)
+            ]
+        case .horizontal:
+            guard fold.height > 0 else { return [] }
+            panels = [
+                CGRect(x: 0, y: 0, width: size.width, height: fold.minY),
+                CGRect(x: 0, y: fold.maxY, width: size.width, height: size.height - fold.maxY)
+            ]
+        }
+        return panels.filter { $0.width > 0 && $0.height > 0 }
+    }
+
+    private static func divisionFraction(_ division: ActiveDivision, surfaceSize: CGSize) -> Double {
+        switch division.axis {
+        case .vertical: return Double(division.region.width / surfaceSize.width)
+        case .horizontal: return Double(division.region.height / surfaceSize.height)
         }
     }
 
@@ -428,11 +542,22 @@ enum DeviceLayoutCoordinator {
     /// index alone gets it inside out for one of the two, which puts the
     /// binding — and the damage protection that follows it — on the outer edges
     /// and tears the gutter where a real book is least worn.
-    static func spineEdge(position: Int, of count: Int, pageIndex: Int) -> PageEdge {
+    static func spineEdge(
+        position: Int,
+        of count: Int,
+        pageIndex: Int,
+        divisionAxis: ReadingDivisionAxis? = nil
+    ) -> PageEdge {
         guard count > 1 else {
             // Single page: alternate, so turning a leaf swaps which edge is
             // bound, the way recto and verso do.
+            if divisionAxis == .horizontal {
+                return pageIndex.isMultiple(of: 2) ? .bottom : .top
+            }
             return pageIndex.isMultiple(of: 2) ? .left : .right
+        }
+        if divisionAxis == .horizontal {
+            return position == 0 ? .bottom : .top
         }
         return position == 0 ? .right : .left
     }

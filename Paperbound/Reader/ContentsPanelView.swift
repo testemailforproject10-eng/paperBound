@@ -16,7 +16,9 @@ struct ContentsPanelView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if model.outline.isEmpty {
+                if model.isLoadingOutline {
+                    ProgressView("Loading contents")
+                } else if model.outline.isEmpty {
                     ContentUnavailableView {
                         Label("No contents", systemImage: "list.bullet.rectangle")
                     } description: {
@@ -52,6 +54,7 @@ struct ContentsPanelView: View {
                 }
             }
         }
+        .task { await model.loadOutlineIfNeeded() }
     }
 }
 

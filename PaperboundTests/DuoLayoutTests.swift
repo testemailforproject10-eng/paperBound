@@ -56,14 +56,16 @@ final class DuoLayoutTests: XCTestCase {
         surface: CGSize,
         snapshot: DisplaySnapshot,
         preference: SpreadPreference = .automatic,
-        presentation: BookPresentation = .paperback
+        presentation: BookPresentation = .paperback,
+        divisionRegions: [CGRect] = []
     ) -> ReadingSurfaceLayout {
         DeviceLayoutCoordinator.layout(
             surfaceSize: surface,
             pageAspectRatio: bookAspect,
             presentation: presentation,
             preference: preference,
-            provider: DisplayPostureProvider(snapshot: snapshot)
+            provider: DisplayPostureProvider(snapshot: snapshot),
+            divisionRegions: divisionRegions
         )
     }
 
@@ -202,6 +204,95 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertEqual(result.posture, .bookLike)
     }
 
+    func testActivePortraitFoldPlacesOnePageOnEachUsablePanel() throws {
+        let open = snapshot(
+            screen: DuoDisplayReference.innerScreen,
+            window: DuoDisplayReference.innerScreen,
+            screensSeen: 2,
+            onLargest: true
+        )
+        let fold = CGRect(x: 329, y: 0, width: 11, height: innerPortraitSurface.height)
+        let result = layout(
+            surface: innerPortraitSurface,
+            snapshot: open,
+            divisionRegions: [fold]
+        )
+
+        XCTAssertEqual(result.mode, .spread)
+        XCTAssertEqual(result.divisionRegion, fold)
+        XCTAssertEqual(result.divisionAxis, .vertical)
+        let rects = DeviceLayoutCoordinator.surfaceRects(
+            in: innerPortraitSurface,
+            layout: result,
+            pageAspectRatio: bookAspect
+        )
+        XCTAssertEqual(rects.count, 2)
+        XCTAssertEqual(rects[0].maxX, fold.minX, accuracy: 0.001)
+        XCTAssertEqual(rects[1].minX, fold.maxX, accuracy: 0.001)
+        for rect in rects {
+            XCTAssertGreaterThanOrEqual(rect.width, DeviceLayoutCoordinator.minimumPageWidth)
+            XCTAssertEqual(rect.intersection(fold).width, 0)
+        }
+    }
+
+    func testSinglePagePreferenceKeepsItsSheetInsideOneFoldPanel() throws {
+        let open = snapshot(
+            screen: DuoDisplayReference.innerScreen,
+            window: DuoDisplayReference.innerScreen,
+            screensSeen: 2,
+            onLargest: true
+        )
+        let fold = CGRect(x: 329, y: 0, width: 11, height: innerPortraitSurface.height)
+        let result = layout(
+            surface: innerPortraitSurface,
+            snapshot: open,
+            preference: .alwaysSingle,
+            divisionRegions: [fold]
+        )
+        let page = try XCTUnwrap(DeviceLayoutCoordinator.surfaceRects(
+            in: innerPortraitSurface,
+            layout: result,
+            pageAspectRatio: bookAspect
+        ).first)
+
+        XCTAssertEqual(result.mode, .single)
+        XCTAssertEqual(page.intersection(fold).width, 0)
+    }
+
+    func testLandscapeFoldKeepsSinglePageInOnePanel() throws {
+        let landscape = DuoDisplayReference.innerScreenLandscape
+        let open = snapshot(
+            screen: landscape,
+            window: innerLandscapeSurface,
+            screensSeen: 2,
+            onLargest: true
+        )
+        let fold = CGRect(x: 0, y: 289, width: innerLandscapeSurface.width, height: 12)
+        let result = layout(
+            surface: innerLandscapeSurface,
+            snapshot: open,
+            divisionRegions: [fold]
+        )
+        let page = try XCTUnwrap(DeviceLayoutCoordinator.surfaceRects(
+            in: innerLandscapeSurface,
+            layout: result,
+            pageAspectRatio: bookAspect
+        ).first)
+
+        XCTAssertEqual(result.divisionAxis, .horizontal)
+        XCTAssertEqual(result.mode, .single)
+        XCTAssertTrue(page.intersection(fold).isNull || page.intersection(fold).isEmpty)
+        XCTAssertTrue(page.maxY <= fold.minY || page.minY >= fold.maxY)
+        XCTAssertEqual(
+            DeviceLayoutCoordinator.spineEdge(position: 0, of: 2, pageIndex: 0, divisionAxis: .horizontal),
+            .bottom
+        )
+        XCTAssertEqual(
+            DeviceLayoutCoordinator.spineEdge(position: 1, of: 2, pageIndex: 1, divisionAxis: .horizontal),
+            .top
+        )
+    }
+
     func testUnfoldedPortraitStillGivesABiggerPageThanTheCoverScreen() {
         func pageWidth(surface: CGSize, snapshot: DisplaySnapshot) -> CGFloat {
             let result = layout(surface: surface, snapshot: snapshot)
@@ -333,6 +424,29 @@ final class DuoLayoutTests: XCTestCase {
             onLargest: true
         )
         XCTAssertFalse(phone.windowIsInsetFromScreen)
+    }
+}
+
+final class ReadingSurfaceLayoutPlacementTests: XCTestCase {
+
+    func testHingeShadingChangeDoesNotChangePagePlacement() {
+        let previous = ReadingSurfaceLayout.singlePage
+        var next = previous
+        next.spineShadowScale = 0.9
+
+        XCTAssertFalse(next.changesPagePlacement(comparedTo: previous))
+    }
+
+    func testFoldDivisionChangeChangesPagePlacement() {
+        var previous = ReadingSurfaceLayout.singlePage
+        previous.mode = .spread
+        previous.divisionAxis = .vertical
+        previous.divisionRegion = CGRect(x: 390, y: 0, width: 24, height: 800)
+        var next = previous
+        next.divisionAxis = .horizontal
+        next.divisionRegion = CGRect(x: 0, y: 390, width: 800, height: 24)
+
+        XCTAssertTrue(next.changesPagePlacement(comparedTo: previous))
     }
 }
 

@@ -25,8 +25,13 @@ final class AppSettings {
     private let defaults: UserDefaults
 
     /// Used by any book that has not chosen its own environment.
+    private var storedDefaultEnvironment: ReadingEnvironment
     var defaultEnvironment: ReadingEnvironment {
-        didSet { persistEnvironment() }
+        get { storedDefaultEnvironment }
+        set {
+            storedDefaultEnvironment = newValue.effectsOnly
+            persistEnvironment()
+        }
     }
 
     var spreadPreference: SpreadPreference {
@@ -51,9 +56,9 @@ final class AppSettings {
 
         if let data = defaults.data(forKey: Key.defaultEnvironment),
            let decoded = try? JSONDecoder().decode(ReadingEnvironment.self, from: data) {
-            self.defaultEnvironment = decoded
+            self.storedDefaultEnvironment = decoded.effectsOnly
         } else {
-            self.defaultEnvironment = .default
+            self.storedDefaultEnvironment = .default
         }
 
         self.spreadPreference = SpreadPreference(
@@ -67,6 +72,7 @@ final class AppSettings {
         self.librarySort = LibrarySort(
             rawValue: defaults.string(forKey: Key.librarySort) ?? ""
         ) ?? .recentlyOpened
+        persistEnvironment()
     }
 
     private func persistEnvironment() {
@@ -76,7 +82,7 @@ final class AppSettings {
 
     /// The environment a book should open with.
     func environment(for book: Book) -> ReadingEnvironment {
-        book.savedEnvironment ?? defaultEnvironment
+        (book.savedEnvironment ?? defaultEnvironment).effectsOnly
     }
 }
 

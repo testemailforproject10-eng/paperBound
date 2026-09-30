@@ -44,9 +44,31 @@ struct PageCompositionRequest {
     /// The visible part of the sheet, in unit coordinates. Paper is drawn to
     /// the sheet's edge; type is kept inside this.
     var safeFraction: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+    /// Hardware-reserved areas, normalized to the sheet. Foreground document
+    /// pixels are clipped out of these regions on Duo.
+    var reservedRegions: [CGRect] = []
     /// 0…1 multiplier on spine shadow depth. The layout coordinator raises this
     /// as a folding device approaches book posture.
     var spineShadowScale: Double = 1.0
+}
+
+/// The finished sheet and, only for Enchanted Ink, its matching clean-paper
+/// sheet. These immutable images are the GPU simulation's preparation inputs.
+struct PageRenderResult: @unchecked Sendable {
+    let image: CGImage
+    let revealBackground: CGImage?
+    let revealSeed: UInt64
+
+    init(image: CGImage, revealBackground: CGImage?, revealSeed: UInt64) {
+        self.image = image
+        self.revealBackground = revealBackground
+        self.revealSeed = revealSeed
+    }
+
+    var memoryCost: Int {
+        image.bytesPerRow * image.height
+            + (revealBackground.map { $0.bytesPerRow * $0.height } ?? 0)
+    }
 }
 
 final class PageCompositor: @unchecked Sendable {
@@ -116,7 +138,8 @@ final class PageCompositor: @unchecked Sendable {
         presentation: BookPresentation,
         pageAspectRatio: Double,
         safeFraction: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1),
-        extraInset: Double = 0
+        extraInset: Double = 0,
+        contentMargin: Double? = nil
     ) -> CGRect {
         guard sheet.width > 0, sheet.height > 0 else { return sheet }
 
@@ -129,7 +152,7 @@ final class PageCompositor: @unchecked Sendable {
         guard safe.width > 0, safe.height > 0 else { return sheet }
 
         let unit = min(safe.width, safe.height)
-        let margin = CGFloat(presentation.surfaceInset + max(0, extraInset)) * unit
+        let margin = CGFloat(contentMargin ?? (presentation.surfaceInset + max(0, extraInset))) * unit
         let box = safe.insetBy(dx: margin, dy: margin)
         guard box.width > 0, box.height > 0, pageAspectRatio > 0 else { return box }
 
@@ -149,7 +172,106 @@ final class PageCompositor: @unchecked Sendable {
 
     // MARK: - Entry point
 
+    /// Production reader path: source pixels on plain white, with no paper
+    /// texture, damage, annotations, tint, shadows or ink color conversion.
+    func compositeReaderPage(
+        _ request: PageCompositionRequest,
+        paperReady: (@Sendable (CGImage) async -> Void)? = nil
+    ) async throws -> PageRenderResult {
+        try Task.checkCancellation()
+        let width = max(1, Int(request.pixelSize.width.rounded()))
+        let height = max(1, Int(request.pixelSize.height.rounded()))
+        guard let ctx = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { throw ReadingEngineError.renderFailed("could not allocate the page bitmap") }
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        let surface = CGRect(x: 0, y: 0, width: width, height: height)
+        let paperTiming = InkMetrics.begin("Paper composite")
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(surface)
+        var background: CGImage?
+        if request.environment.ink == .enchanted {
+            guard let paper = ctx.makeImage() else {
+                throw ReadingEngineError.renderFailed("could not create the plain paper image")
+            }
+            background = paper
+        }
+        InkMetrics.end("Paper composite", paperTiming)
+        if let background { await paperReady?(background) }
+        try Task.checkCancellation()
+        let timing = InkMetrics.begin("Finished composite")
+        defer { InkMetrics.end("Finished composite", timing) }
+        ctx.saveGState()
+        ctx.addRect(surface)
+        for region in request.reservedRegions {
+            ctx.addRect(CGRect(
+                x: region.minX * surface.width, y: region.minY * surface.height,
+                width: region.width * surface.width, height: region.height * surface.height
+            ))
+        }
+        ctx.clip(using: .evenOdd)
+        if let content = request.content {
+            let rect = Self.contentRect(
+                in: surface, presentation: .minimal,
+                pageAspectRatio: request.pageAspectRatio,
+                safeFraction: request.safeFraction, contentMargin: 0
+            )
+            ctx.interpolationQuality = .high
+            drawImage(content, in: rect, into: ctx)
+        }
+        ctx.restoreGState()
+        try Task.checkCancellation()
+        guard let image = ctx.makeImage() else {
+            throw ReadingEngineError.renderFailed("could not create the finished page image")
+        }
+        return PageRenderResult(image: image, revealBackground: background,
+                                revealSeed: request.textureSeed)
+    }
+
     func composite(_ request: PageCompositionRequest) -> CGImage? {
+        composite(request, includesDocumentContent: true)
+    }
+
+    /// Builds the page pair needed by the live ink effect. Both passes use the
+    /// same deterministic inputs, so paper, wear, lighting, and annotations
+    /// line up pixel for pixel.
+    func compositePage(
+        _ request: PageCompositionRequest,
+        paperReady: (@Sendable (CGImage) async -> Void)? = nil
+    ) async throws -> PageRenderResult {
+        var background: CGImage?
+        if request.environment.ink == .enchanted {
+            let timing = InkMetrics.begin("Paper composite")
+            background = composite(request, includesDocumentContent: false)
+            InkMetrics.end("Paper composite", timing)
+            try Task.checkCancellation()
+            guard let background else {
+                throw ReadingEngineError.renderFailed("compositor produced no clean-paper page")
+            }
+            await paperReady?(background)
+        }
+        let timing = InkMetrics.begin("Finished composite")
+        defer { InkMetrics.end("Finished composite", timing) }
+        let finished = composite(request, includesDocumentContent: true)
+        try Task.checkCancellation()
+        guard let finished else {
+            throw ReadingEngineError.renderFailed("compositor produced no finished page")
+        }
+        return PageRenderResult(
+            image: finished,
+            revealBackground: background,
+            revealSeed: request.textureSeed
+        )
+    }
+
+    private func composite(
+        _ request: PageCompositionRequest,
+        includesDocumentContent: Bool
+    ) -> CGImage? {
+        guard !Task.isCancelled else { return nil }
         let width = max(1, Int(request.pixelSize.width.rounded()))
         let height = max(1, Int(request.pixelSize.height.rounded()))
 
@@ -187,6 +309,7 @@ final class PageCompositor: @unchecked Sendable {
         drawStack(ctx, sheetRect: sheetRect, cornerRadius: cornerRadius, request: request)
         drawSheetDropShadow(ctx, sheetPath: sheetOutline, request: request)
         drawUnderSheet(ctx, sheetPath: sheetOutline, sheetRect: sheetRect, request: request)
+        guard !Task.isCancelled else { return nil }
         drawCutBase(
             ctx,
             sheetPath: sheetOutline,
@@ -208,6 +331,7 @@ final class PageCompositor: @unchecked Sendable {
         ctx.clip(using: .evenOdd)
 
         drawPaperMaterial(ctx, rect: sheetRect, request: request)
+        guard !Task.isCancelled else { return nil }
         // The document keeps its own proportions inside a sheet that now fills
         // the screen, so the paper shows as a margin around the text block the
         // way it does in a bound book.
@@ -218,7 +342,9 @@ final class PageCompositor: @unchecked Sendable {
             safeFraction: request.safeFraction,
             extraInset: request.environment.marginalia.marginWidth
         )
-        drawContent(ctx, rect: textBlock, request: request)
+        if includesDocumentContent {
+            drawContent(ctx, rect: textBlock, request: request)
+        }
 
         // Marginalia goes above the document and below the ageing: someone
         // wrote on a printed page, and the page has been ageing ever since.
@@ -246,6 +372,7 @@ final class PageCompositor: @unchecked Sendable {
         }
 
         drawSurfaceDamage(ctx, rect: sheetRect, request: request)
+        guard !Task.isCancelled else { return nil }
 
         ctx.restoreGState()
 
@@ -257,6 +384,7 @@ final class PageCompositor: @unchecked Sendable {
             subtractive: subtractive,
             request: request
         )
+        guard !Task.isCancelled else { return nil }
 
         // Lighting covers the whole leaf, holes included. The lamp falls on the
         // sheet below too, so a hole in a shaded corner must read *darker* than
@@ -448,6 +576,19 @@ final class PageCompositor: @unchecked Sendable {
         guard let content = request.content else { return }
 
         ctx.saveGState()
+        if !request.reservedRegions.isEmpty {
+            let surface = CGRect(origin: .zero, size: request.pixelSize)
+            ctx.addRect(surface)
+            for region in request.reservedRegions {
+                ctx.addRect(CGRect(
+                    x: region.minX * surface.width,
+                    y: region.minY * surface.height,
+                    width: region.width * surface.width,
+                    height: region.height * surface.height
+                ))
+            }
+            ctx.clip(using: .evenOdd)
+        }
         // Asked of the environment rather than the material: a bronze plate or
         // a dark leather board needs inverted type just as dark stock does,
         // and only the substrate knows how dark it ended up.

@@ -300,6 +300,73 @@ final class RenderPipelineTests: XCTestCase {
         XCTAssertEqual(pixels(first), pixels(second), "The same sheet must render to the same pixels.")
     }
 
+    func testEnchantedInkBuildsDeterministicSimulationInputs() async throws {
+        var environment = ReadingEnvironment.cleanPaper
+        environment.ink = .enchanted
+        var composition = request(environment)
+        let contentContext = CGContext(
+            data: nil,
+            width: 600,
+            height: 800,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        contentContext.setFillColor(gray: 0, alpha: 1)
+        contentContext.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+        composition.content = try XCTUnwrap(contentContext.makeImage())
+
+        let first = try await PageCompositor.shared.compositePage(composition)
+        let second = try await PageCompositor.shared.compositePage(composition)
+        let finishedPixels = pixels(first.image)
+        let backgroundPixels = pixels(try XCTUnwrap(first.revealBackground))
+
+        XCTAssertEqual(first.image.width, first.revealBackground?.width)
+        XCTAssertEqual(first.image.height, first.revealBackground?.height)
+        XCTAssertEqual(finishedPixels, pixels(second.image))
+        XCTAssertEqual(backgroundPixels, pixels(try XCTUnwrap(second.revealBackground)))
+        XCTAssertEqual(first.revealSeed, second.revealSeed)
+        XCTAssertNotEqual(finishedPixels, backgroundPixels)
+        // A corner outside the document's fitted content rectangle is identical
+        // in both passes: the paper, wear, and lighting stay visible.
+        XCTAssertEqual(Array(finishedPixels.prefix(4)), Array(backgroundPixels.prefix(4)))
+        XCTAssertEqual(
+            first.memoryCost,
+            first.image.bytesPerRow * first.image.height
+                + first.revealBackground!.bytesPerRow * first.revealBackground!.height
+        )
+    }
+
+    func testDuoReservedRegionClipsOnlyForegroundDocumentPixels() throws {
+        var composition = request(.cleanPaper)
+        let contentContext = CGContext(
+            data: nil,
+            width: 600,
+            height: 800,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        contentContext.setFillColor(gray: 0, alpha: 1)
+        contentContext.fill(CGRect(x: 0, y: 0, width: 600, height: 800))
+        composition.content = try XCTUnwrap(contentContext.makeImage())
+        let unrestricted = try XCTUnwrap(PageCompositor.shared.composite(composition))
+
+        composition.reservedRegions = [CGRect(x: 0.45, y: 0, width: 0.1, height: 1)]
+        let reserved = try XCTUnwrap(PageCompositor.shared.composite(composition))
+        let clearPixels = pixels(reserved)
+        let fullPixels = pixels(unrestricted)
+
+        func rgba(_ data: [UInt8], x: Int, y: Int) -> ArraySlice<UInt8> {
+            let offset = (y * 600 + x) * 4
+            return data[offset..<(offset + 4)]
+        }
+        XCTAssertNotEqual(rgba(clearPixels, x: 300, y: 400), rgba(fullPixels, x: 300, y: 400))
+        XCTAssertEqual(rgba(clearPixels, x: 100, y: 400), rgba(fullPixels, x: 100, y: 400))
+    }
+
     func testDamagedSheetDiffersFromPristineSheet() throws {
         var pristine = ReadingEnvironment.oldJournal
         pristine.condition = .pristine
@@ -484,6 +551,23 @@ final class RenderPipelineTests: XCTestCase {
         XCTAssertEqual(base.stringValue, base.stringValue)
     }
 
+    func testRenderKeyDistinguishesDuoReservedGeometry() {
+        var first = PageRenderKey(
+            stablePageID: "pdf:1",
+            renderIdentity: "x",
+            pixelWidth: 600,
+            pixelHeight: 800,
+            spineShadowBucket: 10,
+            spine: .left,
+            safeToken: "divider-left"
+        )
+        var second = first
+        second.safeToken = "divider-right"
+        XCTAssertNotEqual(first.stringValue, second.stringValue)
+        first.safeToken = second.safeToken
+        XCTAssertEqual(first.stringValue, second.stringValue)
+    }
+
     func testCacheStoresAndReturnsImages() throws {
         let cache = PageRenderCache(costLimitBytes: 8 * 1024 * 1024)
         let key = PageRenderKey(
@@ -502,5 +586,43 @@ final class RenderPipelineTests: XCTestCase {
         XCTAssertNotNil(cache.image(for: key))
         cache.removeAll()
         XCTAssertNil(cache.image(for: key))
+    }
+
+    func testCacheRetainsAllEnchantedImagesAndChargesThemAgainstItsLimit() throws {
+        let image = try XCTUnwrap(PageCompositor.shared.composite(request(
+            .cleanPaper,
+            size: CGSize(width: 100, height: 100)
+        )))
+        let page = PageRenderResult(image: image, revealBackground: image, revealSeed: 7)
+        let cache = PageRenderCache(costLimitBytes: page.memoryCost + 1)
+        let key = PageRenderKey(
+            stablePageID: "pdf:reveal",
+            renderIdentity: "enchanted",
+            pixelWidth: 100,
+            pixelHeight: 100,
+            spineShadowBucket: 10,
+            spine: .left
+        )
+
+        cache.store(page, for: key)
+        let cached = try XCTUnwrap(cache.page(for: key))
+        XCTAssertNotNil(cached.revealBackground)
+        XCTAssertEqual(cached.memoryCost, image.bytesPerRow * image.height * 2)
+    }
+
+    func testCacheEvictsSpeculationBeforeOlderVisitedPages() throws {
+        let image = try XCTUnwrap(PageCompositor.shared.composite(request(.cleanPaper, size: CGSize(width: 64, height: 96))))
+        let page = PageRenderResult(image: image, revealBackground: image, revealSeed: 7)
+        let cache = PageRenderCache(costLimitBytes: page.memoryCost * 2)
+        func key(_ id: String) -> PageRenderKey {
+            PageRenderKey(stablePageID: id, renderIdentity: "ink", pixelWidth: 64,
+                          pixelHeight: 96, spineShadowBucket: 10, spine: .left)
+        }
+        cache.store(page, for: key("visited"))
+        cache.store(page, for: key("speculative"), speculative: true)
+        cache.store(page, for: key("incoming"))
+        XCTAssertNotNil(cache.page(for: key("visited")))
+        XCTAssertNil(cache.page(for: key("speculative")))
+        XCTAssertNotNil(cache.page(for: key("incoming")))
     }
 }

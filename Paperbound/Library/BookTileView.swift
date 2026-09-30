@@ -40,7 +40,7 @@ struct BookTileView: View {
     private var cover: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 3)
-                .fill(environment.material.baseColor.swiftUIColor)
+                .fill(Color.white)
 
             if let data = book.coverData, let image = UIImage(data: data) {
                 Image(uiImage: image)
@@ -48,23 +48,9 @@ struct BookTileView: View {
                     .aspectRatio(contentMode: .fill)
                     .frame(width: width, height: height)
                     .clipped()
-                    .blendMode(environment.material.invertsInk ? .normal : .multiply)
-                    .opacity(environment.material.invertsInk ? 0.85 : 1)
             } else {
                 generatedCover
             }
-
-            // Spine.
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.35),
-                    Color.black.opacity(0.0)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: width * 0.16)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
             if book.isFavorite {
                 Image(systemName: "heart.fill")
@@ -120,9 +106,7 @@ struct BookTileView: View {
     }
 
     private var inkColor: Color {
-        environment.material.invertsInk
-            ? Color(white: 0.88)
-            : Color(red: 0.13, green: 0.11, blue: 0.09)
+        .black
     }
 
     // MARK: - Progress

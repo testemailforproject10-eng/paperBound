@@ -35,6 +35,7 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("Library")
+            .onAppear { InkMetrics.event("Library appeared") }
             .toolbar { toolbarContent }
             .searchable(text: $searchText, prompt: "Title or author")
             .navigationDestination(for: Book.self) { book in
@@ -250,8 +251,6 @@ struct LibraryView: View {
 
     /// Launching with `-paperbound-demo` installs the sample book and opens it
     /// immediately, so the reader screen can be captured without tapping.
-    /// `-paperbound-demo-condition <pristine|lightWear|wellLoved|damaged>`
-    /// picks the page condition to open with. Debug builds only.
     /// Set once per process. `path.isEmpty` cannot stand in for this: it is
     /// true exactly when the reader has been dismissed, so on its own it made
     /// every return to the shelf re-push the same book and left the demo
@@ -268,30 +267,6 @@ struct LibraryView: View {
         // Claimed before the first await, so a re-entrant call during the
         // install cannot push the book twice.
         Self.didAutoOpenDemoBook = true
-
-        if let index = arguments.firstIndex(of: "-paperbound-demo-condition"),
-           index + 1 < arguments.count,
-           let condition = PageCondition(rawValue: arguments[index + 1]) {
-            var environment = ReadingEnvironment.wellReadPaperback
-            environment.condition = condition
-            environment.intensity = condition == .pristine ? 0 : 0.85
-            settings.defaultEnvironment = environment
-        }
-
-        // `-paperbound-demo-theme <slug>` opens in one of the themed
-        // environments, named by the part of its id after "theme." — so
-        // `cursed`, `stone`, `gilded`, `fieldguide`, `grimoire` and the rest.
-        // Applied after the condition block so that passing both lets the
-        // theme win, which is what "show me this theme" should mean.
-        if let index = arguments.firstIndex(of: "-paperbound-demo-theme"),
-           index + 1 < arguments.count {
-            let slug = arguments[index + 1]
-            if let themed = ReadingEnvironment.themedPresets.first(
-                where: { $0.id == "theme.\(slug)" || $0.id == slug }
-            ) {
-                settings.defaultEnvironment = themed
-            }
-        }
 
         library.installSample(into: context)
         // Let the @Query result land before pushing the reader.

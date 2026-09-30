@@ -16,6 +16,8 @@ struct PaperboundApp: App {
     private let container: ModelContainer?
 
     init() {
+        let startupTiming = InkMetrics.begin("App initialization")
+        defer { InkMetrics.end("App initialization", startupTiming) }
         // Both the store and the library folder can fail on a device that is
         // out of space. The app still launches and says so, rather than
         // crashing on a force-unwrap in `init`.

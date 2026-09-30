@@ -24,6 +24,7 @@ final class PDFReadingEngine: ReadingEngine {
 
     private var location: ReadingLocation
     private var cachedOutline: [OutlineItem]?
+    private var cachedAspectRatios: [Int: Double] = [:]
 
     var format: BookFormat { .pdf }
     var capabilities: ReaderCapabilities { .fixedLayout }
@@ -31,6 +32,8 @@ final class PDFReadingEngine: ReadingEngine {
     private(set) var isOpen = false
 
     init(documentID: UUID, fileURL: URL, initialLocation: ReadingLocation?) throws {
+        let timing = InkMetrics.begin("PDF engine initialization")
+        defer { InkMetrics.end("PDF engine initialization", timing) }
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw ReadingEngineError.fileMissing(fileURL)
         }
@@ -173,10 +176,14 @@ final class PDFReadingEngine: ReadingEngine {
 
     func aspectRatio(at location: ReadingLocation) -> Double {
         let index = location.pdfPageIndex ?? 0
-        guard index >= 0, index < worker.pageBoxes.count else { return 792.0 / 612.0 }
-        let box = worker.pageBoxes[index]
-        guard box.width > 0 else { return 792.0 / 612.0 }
-        return Double(box.height / box.width)
+        let fallback = 792.0 / 612.0
+        guard index >= 0, index < worker.pageCount else { return fallback }
+        if let cached = cachedAspectRatios[index] { return cached }
+        guard let box = pdfDocument?.page(at: index)?.bounds(for: .cropBox),
+              box.width > 0, box.height > 0 else { return fallback }
+        let ratio = Double(box.height / box.width)
+        cachedAspectRatios[index] = ratio
+        return ratio
     }
 
     nonisolated func renderPage(at location: ReadingLocation, pixelSize: CGSize) async throws -> CGImage {

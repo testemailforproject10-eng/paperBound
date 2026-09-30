@@ -2,10 +2,7 @@
 //  EnvironmentEditorView.swift
 //  Paperbound
 //
-//  The four dimensions are edited independently — material, condition,
-//  presentation, lighting — rather than being bundled into a long list of
-//  fixed themes. Presets are just starting points that write into the same
-//  four controls.
+//  Reading controls for text effects and their preview.
 //
 
 import SwiftUI
@@ -15,19 +12,17 @@ struct EnvironmentEditorView: View {
     let model: ReaderViewModel
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppSettings.self) private var settings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previewReplayToken = 0
+    @State private var previewFootstepReplayToken = 0
+    @State private var previewFootstepVisitID = UUID()
+    @State private var previewFootstepVisit: FootstepVisit?
 
     var body: some View {
         NavigationStack {
             List {
-                previewSection
-                presetSection
-                themedPresetSection
-                materialSection
-                conditionSection
-                marginaliaSection
-                presentationSection
-                lightingSection
+                inkSection
+                pageEffectsSection
                 defaultsSection
             }
             .listStyle(.insetGrouped)
@@ -43,10 +38,10 @@ struct EnvironmentEditorView: View {
 
     // MARK: - Preview
 
-    private var previewSection: some View {
-        Section {
-            HStack(alignment: .center, spacing: 18) {
-                if let provider = model.provider {
+    private var previewRow: some View {
+        HStack(alignment: .center, spacing: 18) {
+            if let provider = model.provider {
+                ZStack(alignment: .topLeading) {
                     PhysicalPageView(
                         location: model.currentLocation,
                         environment: model.environment,
@@ -59,30 +54,61 @@ struct EnvironmentEditorView: View {
                             position: 0,
                             of: 1,
                             pageIndex: model.currentPageIndex
-                        )
+                        ),
+                        pageIdentity: "\(model.book.id.uuidString)|\(model.engine?.stablePageID(for: model.currentLocation) ?? "pdf:\(model.currentPageIndex)")",
+                        isPreview: true,
+                        replayToken: previewReplayToken,
+                        footstepVisitID: model.environment.footstepsEnabled
+                            ? previewFootstepVisitID : nil,
+                        onPaperReady: { pageIdentity, renderToken, visitID in
+                            previewPaperReady(
+                                pageIdentity: pageIdentity,
+                                renderToken: renderToken,
+                                visitID: visitID
+                            )
+                        }
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(model.environment.name)
-                        .font(.headline)
-                    Text(model.environment.conditionSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if model.environment.condition.removesContent {
-                        Label("Removes content on screen only", systemImage: "arrow.uturn.backward")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                    if model.environment.footstepsEnabled,
+                       let visit = previewFootstepVisit,
+                       visit.startedAt != nil {
+                        FootstepOverlayView(
+                            visit: visit,
+                            seed: StableHash.hash(
+                                "\(model.book.id)|preview|\(model.currentPageIndex)|\(previewFootstepReplayToken)"
+                            ),
+                            surfaces: [CGRect(origin: .zero, size: previewSize)],
+                            reservedRegions: [],
+                            size: previewSize,
+                            isDarkPaper: model.environment.invertsInk,
+                            isPaused: false,
+                            artworkScale: 0.3
+                        )
+                        .id(visit.visitID)
                     }
                 }
-                Spacer(minLength: 0)
+                .frame(width: previewSize.width, height: previewSize.height)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
             }
-            .padding(.vertical, 6)
-        } footer: {
-            Text("This is the page you are on, drawn with the settings below. The imported file is never modified — switch to Pristine at any time to see the document exactly as it was delivered.")
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Preview")
+                    .font(.headline)
+                Text(model.environment.ink == .enchanted ? "Enchanted Ink" : "Instant text")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if model.environment.ink == .enchanted {
+                    Button("Replay effect") { previewReplayToken += 1 }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("reader.replayInk")
+                        .disabled(reduceMotion)
+                }
+            }
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 6)
+        .onChange(of: model.currentPageIndex) { _, _ in resetPreviewFootsteps() }
+        .onChange(of: model.environment.footstepsEnabled) { _, _ in resetPreviewFootsteps() }
     }
 
     private var previewSize: CGSize {
@@ -90,226 +116,56 @@ struct EnvironmentEditorView: View {
         return CGSize(width: width, height: width * CGFloat(model.pageAspectRatio))
     }
 
-    // MARK: - Presets
+    // MARK: - Effects
 
-    private var presetSection: some View {
-        Section("Presets") {
-            presetRow(ReadingEnvironment.presets)
-        }
-    }
-
-    /// The themed environments get their own row rather than being appended to
-    /// the plain ones. They are a different kind of choice — a material, not a
-    /// tuning — and burying eleven of them at the end of a six-item scroller is
-    /// how they end up unreachable.
-    private var themedPresetSection: some View {
+    private var inkSection: some View {
         Section {
-            presetRow(ReadingEnvironment.themedPresets)
+            TextEffectPicker(selection: bind(\.ink))
+            previewRow
         } header: {
-            Text("Themed")
+            Text("Text effects")
         } footer: {
-            Text("Each of these is the same set of controls below at different settings. Change any one of them and this becomes a custom environment — the preset is always one tap away again.")
+            Text(reduceMotion && model.environment.ink == .enchanted
+                ? "Reduce Motion is on. Ink animation is paused and the finished page is shown."
+                : model.environment.ink == .enchanted
+                    ? "Ink bleeds into blank paper, gradually filling letters and illustrations over 3–4 seconds. The full page plays after you close settings."
+                    : "Printed content appears immediately when a page turns. The PDF’s original colors are preserved.")
         }
     }
 
-    private func presetRow(_ presets: [ReadingEnvironment]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(presets) { preset in
-                    Button {
-                        model.applyPreset(preset)
-                    } label: {
-                        VStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 5)
-                                // The substrate's own colour, not the paper
-                                // material's: a stone tablet's swatch has to
-                                // look like stone or the row is unreadable.
-                                .fill(preset.palette.base.swiftUIColor)
-                                .frame(width: 54, height: 72)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .strokeBorder(
-                                            model.environment.id == preset.id
-                                                ? Color.accentColor
-                                                : Color.black.opacity(0.18),
-                                            lineWidth: model.environment.id == preset.id ? 2.5 : 1
-                                        )
-                                )
-                                .overlay(alignment: .bottomTrailing) {
-                                    if preset.condition.removesContent {
-                                        Image(systemName: "scissors")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(preset.palette.fiber.swiftUIColor)
-                                            .padding(4)
-                                    }
-                                }
-                                .overlay(alignment: .topLeading) {
-                                    if preset.marginalia.producesAnything {
-                                        Image(systemName: "pencil")
-                                            .font(.system(size: 9))
-                                            .foregroundStyle(preset.palette.fiber.swiftUIColor)
-                                            .padding(4)
-                                    }
-                                }
-                            Text(preset.name)
-                                .font(.caption2)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .frame(width: 66)
-                        }
-                    }
-                    .buttonStyle(.plain)
+    private var pageEffectsSection: some View {
+        Section("Page effects") {
+            Toggle("Footsteps", isOn: bind(\.footstepsEnabled))
+            if model.environment.footstepsEnabled {
+                Button("Replay footsteps") {
+                    previewFootstepReplayToken += 1
+                    resetPreviewFootsteps()
                 }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    // MARK: - Dimensions
-
-    private var materialSection: some View {
-        let substrate = model.environment.substrate
-        return Section {
-            Picker("Made of", selection: bind(\.substrate)) {
-                ForEach(Substrate.allCases) { option in
-                    Text(option.displayName).tag(option)
-                }
-            }
-
-            Text(substrate.summary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker(substrate == .paper ? "Material" : "Tone", selection: bind(\.material)) {
-                ForEach(PaperMaterial.allCases) { material in
-                    Text(material.displayName).tag(material)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            // Swatches follow the substrate, so switching to stone repaints the
-            // row in stone rather than leaving five paper colours behind.
-            HStack(spacing: 8) {
-                ForEach(PaperMaterial.allCases) { material in
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(substrate.palette(for: material).base.swiftUIColor)
-                        .frame(height: 26)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(Color.black.opacity(0.15), lineWidth: 1)
-                        )
-                }
-            }
-            .listRowSeparator(.hidden)
-        } header: {
-            Text(substrate == .paper ? "Paper" : "Surface")
-        } footer: {
-            if substrate != .paper {
-                Text("On anything other than paper the five stocks choose a tone rather than a colour, so \"Aged\" means mid-toned \(substrate.displayName.lowercased()).")
-            }
-        }
-    }
-
-    private var marginaliaSection: some View {
-        Section {
-            Picker("Marks", selection: bind(\.marginalia)) {
-                ForEach(MarginaliaStyle.allCases) { style in
-                    Text(style.displayName).tag(style)
-                }
-            }
-
-            Text(model.environment.marginalia.summary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } header: {
-            Text("Marks")
-        } footer: {
-            Text("Annotation is drawn in the margins and never over the words. A book with marks in it carries a wider margin, because that is what makes a book writable.")
-        }
-    }
-
-    private var conditionSection: some View {
-        Section("Condition") {
-            Picker("Condition", selection: bind(\.condition)) {
-                ForEach(PageCondition.allCases) { condition in
-                    Text(condition.displayName).tag(condition)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            Text(model.environment.conditionSummary)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            if model.environment.condition != .pristine {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Intensity")
-                        Spacer()
-                        Text("\(Int((model.environment.intensity * 100).rounded()))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(
-                        value: Binding(
-                            get: { model.environment.intensity },
-                            set: { newValue in
-                                var next = model.environment
-                                next.intensity = newValue
-                                model.environment = next
-                            }
-                        ),
-                        in: 0...1
-                    )
-                }
-
-                Button {
-                    model.rerollWear()
-                } label: {
-                    Label("New wear pattern for this copy", systemImage: "shuffle")
-                }
-            }
-        }
-    }
-
-    private var presentationSection: some View {
-        Section("Book") {
-            Picker("Presentation", selection: bind(\.presentation)) {
-                ForEach(BookPresentation.allCases) { presentation in
-                    Text(presentation.displayName).tag(presentation)
-                }
-            }
-            Picker("Page layout", selection: Binding(
-                get: { settings.spreadPreference },
-                set: { newValue in
-                    settings.spreadPreference = newValue
-                }
-            )) {
-                ForEach(SpreadPreference.allCases) { preference in
-                    Text(preference.displayName).tag(preference)
-                }
-            }
-            LabeledContent("Current surface") {
-                Text(model.layout.mode == .spread ? "Two pages" : "One page")
+                Text("Three trails of small ink shoeprints wander across the visible paper and may cross between pages on Duo.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            LabeledContent("Posture") {
-                // Never claim more than the platform actually told us.
-                Text("\(model.layout.posture.displayName) (\(model.layout.postureEvidence))")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
-            }
         }
     }
 
-    private var lightingSection: some View {
-        Section("Light") {
-            Picker("Lighting", selection: bind(\.lighting)) {
-                ForEach(LightingStyle.allCases) { style in
-                    Text(style.displayName).tag(style)
-                }
-            }
-        }
+    private func resetPreviewFootsteps() {
+        previewFootstepVisit = nil
+        previewFootstepVisitID = UUID()
+    }
+
+    private func previewPaperReady(pageIdentity: String, renderToken: String, visitID: UUID) {
+        guard model.environment.footstepsEnabled,
+              visitID == previewFootstepVisitID else { return }
+        var visit = previewFootstepVisit ?? FootstepVisit(
+            unit: 0, visitID: visitID,
+            pageRenderTokens: [pageIdentity: renderToken]
+        )
+        visit.setVisibleFraction(1, at: Date())
+        guard visit.paperReady(
+            pageIdentity: pageIdentity, renderToken: renderToken,
+            visitID: visitID, at: Date()
+        ) else { return }
+        previewFootstepVisit = visit
     }
 
     private var defaultsSection: some View {
@@ -325,7 +181,7 @@ struct EnvironmentEditorView: View {
                 Label("Reset to my default", systemImage: "arrow.counterclockwise")
             }
         } footer: {
-            Text("Each book remembers its own environment and its own wear pattern. The default applies to books that have not chosen one.")
+            Text("Each book remembers its own reading settings. Your default applies to new books.")
         }
     }
 

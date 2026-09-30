@@ -123,10 +123,10 @@ final class Book {
     var savedEnvironment: ReadingEnvironment? {
         get {
             guard let environmentData else { return nil }
-            return try? JSONDecoder().decode(ReadingEnvironment.self, from: environmentData)
+            return (try? JSONDecoder().decode(ReadingEnvironment.self, from: environmentData))?.effectsOnly
         }
         set {
-            environmentData = newValue.flatMap { try? JSONEncoder().encode($0) }
+            environmentData = newValue.flatMap { try? JSONEncoder().encode($0.effectsOnly) }
         }
     }
 

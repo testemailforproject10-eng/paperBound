@@ -24,6 +24,8 @@ enum InkBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Type sinks back into the page when the reader stops, and returns the
     /// moment they touch it.
     case recede
+    /// Liquid ink starts at scattered points and travels through printed strokes.
+    case enchanted
 
     var id: String { rawValue }
 
@@ -33,6 +35,7 @@ enum InkBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
         case .absorb: return "Absorbing"
         case .emerge: return "Emerging"
         case .recede: return "Receding"
+        case .enchanted: return "Enchanted Ink"
         }
     }
 
@@ -42,28 +45,45 @@ enum InkBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
         case .absorb: return "Ink soaks into the sheet and tightens as it dries."
         case .emerge: return "Words surface out of the paper as the page settles."
         case .recede: return "Words sink into the page when you stop, and return at a touch."
+        case .enchanted: return "Liquid pigment spreads and settles inside printed letters and illustrations."
         }
     }
 
-    /// How long the arrival takes. Zero means there is no arrival to animate.
+    /// Nominal duration. Enchanted Ink varies this per page from 3 to 4 seconds.
     var revealDuration: Duration {
         switch self {
         case .instant: return .zero
         case .absorb: return .milliseconds(420)
         case .emerge: return .milliseconds(650)
         case .recede: return .milliseconds(380)
+        case .enchanted: return .milliseconds(3500)
         }
     }
 
-    /// How far the ink spreads past its true edge at the start of the reveal,
-    /// as a fraction of the sheet's shorter side. Drives a blur, not a smudge:
-    /// the glyph shapes themselves are never altered.
+    /// Actual duration for a seeded page. Enchanted Ink ranges from 3 to
+    /// 4 seconds; the stable seed makes the pace vary by page and repeat
+    /// consistently when a reader returns to it.
+    func revealDurationSeconds(seed: UInt64) -> Double {
+        switch self {
+        case .instant: return 0
+        case .absorb: return 0.42
+        case .emerge: return 0.65
+        case .recede: return 0.38
+        case .enchanted:
+            let fraction = Double(seed >> 11) * (1.0 / 9_007_199_254_740_992.0)
+            return 3.0 + fraction
+        }
+    }
+
+    /// Maximum temporary edge spread used by the older ink variants. Enchanted
+    /// Ink follows its precomputed pigment map and never expands beyond print.
     var maximumBleed: Double {
         switch self {
         case .instant: return 0.0
         case .absorb: return 0.0045
         case .emerge: return 0.0020
         case .recede: return 0.0030
+        case .enchanted: return 0
         }
     }
 
@@ -74,7 +94,7 @@ enum InkBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
     var idleDelay: Duration {
         switch self {
         case .recede: return .seconds(12)
-        case .instant, .absorb, .emerge: return .seconds(0)
+        case .instant, .absorb, .emerge, .enchanted: return .seconds(0)
         }
     }
 
@@ -99,11 +119,13 @@ enum InkBehavior: String, Codable, CaseIterable, Identifiable, Sendable {
             return 1 - pow(1 - t, 2.2)
         case .recede:
             return t
+        case .enchanted:
+            return 1.0
         }
     }
 
-    /// Ink spread at `progress`, in normalized units. Falls to zero as the
-    /// impression dries.
+    /// Edge spread at `progress`, in normalized units, for ink variants that
+    /// use a softened print edge. Enchanted Ink does not spread beyond print.
     func bleed(atProgress progress: Double) -> Double {
         let t = progress.clamped(to: 0...1)
         return maximumBleed * (1 - t)

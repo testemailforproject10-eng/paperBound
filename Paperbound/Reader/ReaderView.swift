@@ -20,6 +20,11 @@ struct ReaderView: View {
 
     @State private var model: ReaderViewModel?
 
+    init(book: Book, model: ReaderViewModel? = nil) {
+        self.book = book
+        self._model = State(initialValue: model)
+    }
+
     var body: some View {
         ZStack {
             if let model {
@@ -112,7 +117,7 @@ struct ReaderView: View {
         .sheet(item: Binding(
             get: { model.activePanel },
             set: { model.activePanel = $0 }
-        )) { panel in
+        ), onDismiss: { model.isPanelPresented = false }) { panel in
             panelContent(panel, model: model)
                 .presentationDetents(
                     panel == .environment && !Self.opensPanelsExpanded
@@ -233,7 +238,6 @@ struct ReaderView: View {
                 } label: {
                     Label("Contents", systemImage: "list.bullet")
                 }
-                .disabled(model.outline.isEmpty)
                 Button {
                     model.activePanel = .bookmarks
                 } label: {
@@ -254,11 +258,6 @@ struct ReaderView: View {
                     )
                 }
                 Divider()
-                Button {
-                    model.rerollWear()
-                } label: {
-                    Label("New wear pattern", systemImage: "shuffle")
-                }
                 Button {
                     book.isFavorite.toggle()
                 } label: {
@@ -282,15 +281,20 @@ struct ReaderView: View {
             if model.pageCount > 1 {
                 Slider(
                     value: Binding(
-                        get: { Double(model.currentPageIndex) },
-                        set: { model.go(toPageIndex: Int($0.rounded())) }
+                        get: { model.sliderSelection ?? Double(model.currentPageIndex) },
+                        set: { model.sliderSelection = $0 }
                     ),
                     in: 0...Double(max(1, model.pageCount - 1)),
-                    step: 1
+                    step: 1,
+                    onEditingChanged: { editing in
+                        if editing { model.sliderSelection = Double(model.currentPageIndex) }
+                        else { model.commitSlider() }
+                    }
                 )
+                .accessibilityIdentifier("reader.pageSlider")
             }
             HStack {
-                Text(model.positionLabel)
+                Text(model.sliderSelection.map { "Page \(Int($0.rounded()) + 1) of \(model.pageCount)" } ?? model.positionLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

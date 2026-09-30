@@ -20,17 +20,36 @@ import CoreGraphics
 @preconcurrency import PDFKit
 import UIKit
 
-/// Safe to hand across actors: every access to `document` happens on `queue`,
-/// and `pageBoxes` is immutable after init.
+/// The PDFKit queue is serial, so an obsolete request may wait behind another
+/// page. Its task's cancellation state does not propagate into a GCD block.
+private final class PDFRenderCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
+/// Safe to hand across actors: every access to `document` after initialization
+/// happens on `queue`.
 final class PDFDocumentWorker: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let document: PDFDocument
     private let url: URL
 
-    /// Cheap page geometry, read once on init so the main thread can lay out
-    /// without touching the background document.
-    let pageBoxes: [CGRect]
+    /// Page count is cheap to read and does not enumerate every page. Geometry
+    /// is requested only for pages entering the reader.
+    let pageCount: Int
 
     init?(url: URL) {
         guard let document = PDFDocument(url: url) else { return nil }
@@ -41,12 +60,8 @@ final class PDFDocumentWorker: @unchecked Sendable {
             label: "com.paperbound.pdfworker.\(url.lastPathComponent)",
             qos: .userInitiated
         )
-        self.pageBoxes = (0..<document.pageCount).map { index in
-            document.page(at: index)?.bounds(for: .cropBox) ?? CGRect(x: 0, y: 0, width: 612, height: 792)
-        }
+        self.pageCount = document.pageCount
     }
-
-    var pageCount: Int { pageBoxes.count }
 
     // MARK: - Rasterizing
 
@@ -56,50 +71,65 @@ final class PDFDocumentWorker: @unchecked Sendable {
     /// result over paper texture with a multiply (or screen) blend, so unprinted
     /// areas show the paper rather than a flat white rectangle.
     func renderPage(index: Int, pixelSize: CGSize) async throws -> CGImage {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                let document = self.document
-                guard index >= 0, index < document.pageCount, let page = document.page(at: index) else {
-                    continuation.resume(throwing: ReadingEngineError.locationOutOfBounds(.pdfPage(index: index, yOffset: 0)))
-                    return
-                }
-                let width = max(1, Int(pixelSize.width.rounded()))
-                let height = max(1, Int(pixelSize.height.rounded()))
-                let pageRect = page.bounds(for: .cropBox)
-                guard pageRect.width > 0, pageRect.height > 0 else {
-                    continuation.resume(throwing: ReadingEngineError.renderFailed("page \(index) has an empty crop box"))
-                    return
-                }
+        let cancellation = PDFRenderCancellation()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    guard !cancellation.isCancelled else {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    let document = self.document
+                    guard index >= 0, index < document.pageCount, let page = document.page(at: index) else {
+                        continuation.resume(throwing: ReadingEngineError.locationOutOfBounds(.pdfPage(index: index, yOffset: 0)))
+                        return
+                    }
+                    let width = max(1, Int(pixelSize.width.rounded()))
+                    let height = max(1, Int(pixelSize.height.rounded()))
+                    let pageRect = page.bounds(for: .cropBox)
+                    guard pageRect.width > 0, pageRect.height > 0 else {
+                        continuation.resume(throwing: ReadingEngineError.renderFailed("page \(index) has an empty crop box"))
+                        return
+                    }
 
-                let format = UIGraphicsImageRendererFormat()
-                format.scale = 1
-                format.opaque = false
-                format.preferredRange = .standard
+                    let format = UIGraphicsImageRendererFormat()
+                    format.scale = 1
+                    format.opaque = false
+                    format.preferredRange = .standard
 
-                let renderer = UIGraphicsImageRenderer(
-                    size: CGSize(width: width, height: height),
-                    format: format
-                )
-                let image = renderer.image { context in
-                    let cg = context.cgContext
-                    cg.interpolationQuality = .high
-                    // UIGraphicsImageRenderer hands us a flipped (y-down) context;
-                    // PDF pages draw in y-up space, so undo the flip first.
-                    cg.translateBy(x: 0, y: CGFloat(height))
-                    cg.scaleBy(x: 1, y: -1)
-                    cg.scaleBy(
-                        x: CGFloat(width) / pageRect.width,
-                        y: CGFloat(height) / pageRect.height
+                    let renderer = UIGraphicsImageRenderer(
+                        size: CGSize(width: width, height: height),
+                        format: format
                     )
-                    page.draw(with: .cropBox, to: cg)
-                }
+                    let image = renderer.image { context in
+                        let cg = context.cgContext
+                        cg.interpolationQuality = .high
+                        // UIGraphicsImageRenderer hands us a flipped (y-down) context;
+                        // PDF pages draw in y-up space, so undo the flip first.
+                        cg.translateBy(x: 0, y: CGFloat(height))
+                        cg.scaleBy(x: 1, y: -1)
+                        cg.scaleBy(
+                            x: CGFloat(width) / pageRect.width,
+                            y: CGFloat(height) / pageRect.height
+                        )
+                        page.draw(with: .cropBox, to: cg)
+                    }
 
-                guard let cgImage = image.cgImage else {
-                    continuation.resume(throwing: ReadingEngineError.renderFailed("no bitmap produced for page \(index)"))
-                    return
+                    guard !cancellation.isCancelled else {
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+
+                    guard let cgImage = image.cgImage else {
+                        continuation.resume(throwing: ReadingEngineError.renderFailed("no bitmap produced for page \(index)"))
+                        return
+                    }
+                    continuation.resume(returning: cgImage)
                 }
-                continuation.resume(returning: cgImage)
             }
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 

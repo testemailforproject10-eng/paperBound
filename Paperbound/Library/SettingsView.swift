@@ -21,7 +21,8 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            defaultEnvironmentSection
+            textEffectsSection
+            pageEffectsSection
             readingSection
             speechSection
             storageSection
@@ -32,73 +33,21 @@ struct SettingsView: View {
         .task { storageBytes = measureStorage() }
     }
 
-    // MARK: - Default environment
+    // MARK: - Default effects
 
-    private var defaultEnvironmentSection: some View {
+    private var textEffectsSection: some View {
         Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(ReadingEnvironment.allPresets) { preset in
-                        Button {
-                            settings.defaultEnvironment = preset
-                        } label: {
-                            VStack(spacing: 6) {
-                                RoundedRectangle(cornerRadius: 5)
-                                    // The substrate's colour, so a stone or
-                                    // metal default is recognisable here.
-                                    .fill(preset.palette.base.swiftUIColor)
-                                    .frame(width: 48, height: 64)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 5)
-                                            .strokeBorder(
-                                                settings.defaultEnvironment.id == preset.id
-                                                    ? Color.accentColor
-                                                    : Color.black.opacity(0.18),
-                                                lineWidth: settings.defaultEnvironment.id == preset.id ? 2.5 : 1
-                                            )
-                                    )
-                                Text(preset.name)
-                                    .font(.caption2)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                                    .frame(width: 62)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
-            Picker("Paper", selection: environmentBinding(\.material)) {
-                ForEach(PaperMaterial.allCases) { Text($0.displayName).tag($0) }
-            }
-            Picker("Condition", selection: environmentBinding(\.condition)) {
-                ForEach(PageCondition.allCases) { Text($0.displayName).tag($0) }
-            }
-            Picker("Book", selection: environmentBinding(\.presentation)) {
-                ForEach(BookPresentation.allCases) { Text($0.displayName).tag($0) }
-            }
-            Picker("Light", selection: environmentBinding(\.lighting)) {
-                ForEach(LightingStyle.allCases) { Text($0.displayName).tag($0) }
-            }
-
-            if settings.defaultEnvironment.condition != .pristine {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Intensity")
-                        Spacer()
-                        Text("\(Int((settings.defaultEnvironment.intensity * 100).rounded()))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: environmentBinding(\.intensity), in: 0...1)
-                }
-            }
+            TextEffectPicker(selection: environmentBinding(\.ink))
         } header: {
-            Text("Default reading environment")
+            Text("Text effects")
         } footer: {
-            Text("New books open with this. A book that has chosen its own environment keeps it.")
+            Text("Default effects for new books. Each book can have its own reading settings.")
+        }
+    }
+
+    private var pageEffectsSection: some View {
+        Section("Page effects") {
+            Toggle("Footsteps", isOn: environmentBinding(\.footstepsEnabled))
         }
     }
 
@@ -106,12 +55,6 @@ struct SettingsView: View {
 
     private var readingSection: some View {
         Section("Reading") {
-            Picker("Page layout", selection: Binding(
-                get: { settings.spreadPreference },
-                set: { settings.spreadPreference = $0 }
-            )) {
-                ForEach(SpreadPreference.allCases) { Text($0.displayName).tag($0) }
-            }
             Toggle("Keep the screen awake while reading", isOn: Binding(
                 get: { settings.keepScreenAwake },
                 set: { settings.keepScreenAwake = $0 }
@@ -184,7 +127,7 @@ struct SettingsView: View {
             set: { newValue in
                 var next = settings.defaultEnvironment
                 next[keyPath: keyPath] = newValue
-                if next.id.hasPrefix("preset.") {
+                if next.id.hasPrefix("preset.") || next.id.hasPrefix("theme.") {
                     next.id = "custom.\(UUID().uuidString.prefix(8))"
                     next.name = "Custom"
                 }

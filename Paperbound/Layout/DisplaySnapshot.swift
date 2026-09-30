@@ -6,10 +6,9 @@
 //
 //  On the iPhone Duo this is the whole game. The device reports two integrated
 //  displays — a smaller cover screen and a larger inner screen — and folding or
-//  unfolding moves the app's scene from one to the other. There is no hinge
-//  angle to read (see DeviceLayoutCoordinator for what was actually checked in
-//  the SDK), but *which screen the scene is on* is public, current API and it
-//  is a far better signal than guessing from the window's aspect ratio.
+//  unfolding moves the app's scene from one to the other. When hinge reporting
+//  is unavailable, *which screen the scene is on* is public, current API and a
+//  far better signal than guessing from the window's aspect ratio.
 //
 //  Everything here uses APIs that are not deprecated in iOS 27:
 //  `UIApplication.connectedScenes`, `UIWindowScene.screen`, `UIWindowScene.keyWindow`.
