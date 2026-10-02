@@ -62,9 +62,9 @@ final class EnchantedInkRevealSequenceTests: XCTestCase {
         let quickDuration = InkBehavior.enchanted.revealDurationSeconds(seed: 1)
         var sequence = EnchantedInkRevealSequence(unit: 3, pageIdentities: ["left", "right"])
 
-        sequence.updateVisibility(0.049, at: eligibleAt)
+        sequence.updateVisibility(0.5, at: eligibleAt)
         XCTAssertTrue(sequence.pageBecameReady("left", visitID: sequence.visitID, revealSeed: 1, at: eligibleAt))
-        sequence.updateVisibility(0.05, at: eligibleAt)
+        sequence.updateVisibility(1, at: eligibleAt)
         XCTAssertEqual(sequence.phase, .waiting)
         XCTAssertEqual(try XCTUnwrap(sequence.activation(for: "left")).state, .waiting)
 
@@ -116,15 +116,17 @@ final class EnchantedInkRevealSequenceTests: XCTestCase {
         XCTAssertEqual(sequence.phase, .finished)
     }
 
-    func testEachPageWaitsForItsImageAndTheFivePercentVisibilityThreshold() throws {
+    func testEachPageWaitsForItsImageAndForTheTurnToLand() throws {
         let start = Date(timeIntervalSince1970: 3_000)
         var sequence = EnchantedInkRevealSequence(unit: 1, pageIdentities: ["page"])
 
-        sequence.updateVisibility(0.049, at: start)
+        sequence.updateVisibility(0.05, at: start)
         sequence.pageBecameReady("page", visitID: sequence.visitID, revealSeed: 123, at: start)
-        XCTAssertEqual(sequence.phase, .waiting)
+        XCTAssertEqual(sequence.phase, .waiting, "A page still turning stays blank.")
+        sequence.updateVisibility(0.95, at: start.addingTimeInterval(0.5))
+        XCTAssertEqual(sequence.phase, .waiting, "Nearly open is not open.")
 
-        sequence.updateVisibility(0.05, at: start.addingTimeInterval(1))
+        sequence.updateVisibility(1, at: start.addingTimeInterval(1))
         let activation = try XCTUnwrap(sequence.activation(for: "page"))
         XCTAssertEqual(activation.state, .revealing(
             startDate: start.addingTimeInterval(1),
@@ -197,5 +199,22 @@ final class EnchantedInkRevealSequenceTests: XCTestCase {
         XCTAssertEqual(sequence.phase, .finished)
         XCTAssertEqual(try XCTUnwrap(sequence.activation(for: "left")).state, .finished)
         XCTAssertEqual(try XCTUnwrap(sequence.activation(for: "right")).state, .finished)
+    }
+
+    func testAStartDelayKeepsTheLandedPageBlankThenFinishesOnTheDelayedClock() throws {
+        let landed = Date(timeIntervalSince1970: 5_000)
+        let duration = InkBehavior.enchanted.revealDurationSeconds(seed: 7)
+        var sequence = EnchantedInkRevealSequence(unit: 2, pageIdentities: ["page"], startDelay: 2.5)
+        sequence.pageBecameReady("page", visitID: sequence.visitID, revealSeed: 7, at: landed)
+        sequence.updateVisibility(1, at: landed)
+
+        let start = landed.addingTimeInterval(2.5)
+        XCTAssertEqual(try XCTUnwrap(sequence.activation(for: "page")).state,
+                       .revealing(startDate: start, durationSeconds: duration))
+        XCTAssertFalse(sequence.pageDidFinish("page", visitID: sequence.visitID, startedAt: start,
+                                              at: landed.addingTimeInterval(duration)),
+                       "The pause does not count towards the reveal.")
+        XCTAssertTrue(sequence.pageDidFinish("page", visitID: sequence.visitID, startedAt: start,
+                                             at: start.addingTimeInterval(duration)))
     }
 }

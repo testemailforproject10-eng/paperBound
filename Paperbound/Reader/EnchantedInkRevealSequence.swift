@@ -20,7 +20,14 @@ struct PageRevealActivation: Equatable {
 }
 
 struct EnchantedInkRevealSequence: Equatable {
-    static let visibilityThreshold: CGFloat = 0.05
+    /// The ink starts flowing only once the page has finished turning and
+    /// lies fully open. The sequence itself is created as the turn begins
+    /// (see PageTurnVisibility.revealThreshold), so the pages prepare while
+    /// they turn and the ink can start the moment the turn lands.
+    static let visibilityThreshold: CGFloat = 0.999
+    /// After a page turn, the page rests as blank paper this long before the
+    /// ink starts, so the turn and the writing read as two separate moments.
+    static let landingPause: TimeInterval = 2.5
 
     enum Phase: Equatable {
         case waiting
@@ -31,6 +38,8 @@ struct EnchantedInkRevealSequence: Equatable {
     let unit: Int
     let visitID: UUID
     let pageIdentities: [String]
+    /// How long after the pages are open and ready the ink starts.
+    let startDelay: TimeInterval
 
     private(set) var phase: Phase = .waiting
     private(set) var isEligible = false
@@ -39,10 +48,11 @@ struct EnchantedInkRevealSequence: Equatable {
     private(set) var durations: [String: Double] = [:]
     private(set) var completedPageIdentities: Set<String> = []
 
-    init(unit: Int, pageIdentities: [String], visitID: UUID = UUID()) {
+    init(unit: Int, pageIdentities: [String], visitID: UUID = UUID(), startDelay: TimeInterval = 0) {
         self.unit = unit
         self.pageIdentities = pageIdentities
         self.visitID = visitID
+        self.startDelay = max(0, startDelay)
     }
 
     /// Selecting ink on an already visible page is a new visit. Other effect
@@ -141,7 +151,7 @@ struct EnchantedInkRevealSequence: Equatable {
 
         for pageIdentity in pageIdentities {
             guard let seed = readyPageSeeds[pageIdentity] else { continue }
-            startDates[pageIdentity] = date
+            startDates[pageIdentity] = date.addingTimeInterval(startDelay)
             durations[pageIdentity] = InkBehavior.enchanted.revealDurationSeconds(seed: seed)
         }
         phase = .revealing

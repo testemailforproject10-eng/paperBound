@@ -227,11 +227,26 @@ final class DuoLayoutTests: XCTestCase {
             pageAspectRatio: bookAspect
         )
         XCTAssertEqual(rects.count, 2)
-        XCTAssertEqual(rects[0].maxX, fold.minX, accuracy: 0.001)
-        XCTAssertEqual(rects[1].minX, fold.maxX, accuracy: 0.001)
+        // The leaves meet on the fold's centre line: an open book, no board
+        // showing between the pages.
+        XCTAssertEqual(rects[0].maxX, fold.midX, accuracy: 0.001)
+        XCTAssertEqual(rects[1].minX, fold.midX, accuracy: 0.001)
+        let seam = try XCTUnwrap(DeviceLayoutCoordinator.seam(in: innerPortraitSurface, layout: result))
+        XCTAssertEqual(seam.line, fold.midX, accuracy: 0.001)
+        XCTAssertEqual(seam.width, fold.width, accuracy: 0.001)
+        XCTAssertEqual(seam.axis, .vertical)
+        let safe = CGRect(origin: .zero, size: innerPortraitSurface)
         for rect in rects {
             XCTAssertGreaterThanOrEqual(rect.width, DeviceLayoutCoordinator.minimumPageWidth)
-            XCTAssertEqual(rect.intersection(fold).width, 0)
+            // Paper runs onto the fold, but text never does.
+            let fraction = PageContentGeometry.readableFraction(for: rect, within: safe, excluding: [fold])
+            let readable = CGRect(
+                x: rect.minX + fraction.minX * rect.width,
+                y: rect.minY + fraction.minY * rect.height,
+                width: fraction.width * rect.width,
+                height: fraction.height * rect.height
+            )
+            XCTAssertEqual(readable.intersection(fold).width, 0, accuracy: 0.001)
         }
     }
 

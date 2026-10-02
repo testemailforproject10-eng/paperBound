@@ -187,6 +187,8 @@ final class ReaderViewModel {
     }
 
     func unload() {
+        textSelection.clear()
+        textSelectors.removeAll()
         searchTask?.cancel()
         speech.stop()
         persist()
@@ -357,6 +359,117 @@ final class ReaderViewModel {
     func removeBookmark(_ bookmark: Bookmark) {
         context.delete(bookmark)
         persist()
+    }
+
+    // MARK: Highlights
+
+    /// What the reader has selected or is editing, shared by every page view.
+    let textSelection = TextSelectionSession()
+    @ObservationIgnored private var textSelectors: [Int: PageTextSelector] = [:]
+
+    /// The text layer of one page, built once and kept: hit testing runs on
+    /// every drag event and must not walk PDFKit each time.
+    func textSelector(forPage pageIndex: Int) -> PageTextSelector? {
+        if let cached = textSelectors[pageIndex] { return cached }
+        guard let page = engine?.pdfDocument?.page(at: pageIndex),
+              // The renderer scales the unrotated crop box onto the sheet, so
+              // the text layer must be read unrotated too to line up with it.
+              let selector = PageTextSelector(page: page, pageIndex: pageIndex,
+                                              appliesRotation: false) else { return nil }
+        // A handful of pages is all a reader touches in one sitting.
+        if textSelectors.count > 12 { textSelectors.removeAll() }
+        textSelectors[pageIndex] = selector
+        return selector
+    }
+
+    /// The text block's aspect for one page, which can differ from the book's.
+    func pageAspectRatio(forPage pageIndex: Int) -> Double {
+        engine?.aspectRatio(at: .pdfPage(index: pageIndex, yOffset: 0)) ?? pageAspectRatio
+    }
+
+    /// Saved marks on one page, ready to draw.
+    func marks(onPage pageIndex: Int) -> [PageMark] {
+        book.highlights
+            .filter { $0.location.pdfPageIndex == pageIndex }
+            .sorted { $0.createdAt < $1.createdAt }
+            .map(\.pageMark)
+    }
+
+    func highlight(withID id: UUID) -> Highlight? {
+        book.highlights.first { $0.id == id }
+    }
+
+    var lastHighlightStyle: HighlightStyle { settings.lastHighlightStyle }
+    var lastHighlightColor: HighlightColor { settings.lastHighlightColor }
+
+    /// Marks a selection and remembers the style and colour for next time.
+    @discardableResult
+    func addHighlight(
+        _ selection: PageTextSelection, style: HighlightStyle, color: HighlightColor
+    ) -> Highlight? {
+        guard let engine, !selection.lineRects.isEmpty else { return nil }
+        let location = ReadingLocation.pdfPage(index: selection.pageIndex, yOffset: 0)
+        // Page first, then position down the page, so the list reads in order.
+        let top = Double(selection.lineRects.first?.minY ?? 0)
+        let highlight = Highlight(
+            quotedText: selection.text,
+            color: color,
+            style: style,
+            location: location,
+            normalizedRects: selection.lineRects,
+            characterRange: selection.range,
+            orderKey: engine.orderKey(for: location) + min(max(top, 0), 0.999)
+        )
+        highlight.book = book
+        context.insert(highlight)
+        rememberHighlight(style: style, color: color)
+        persist()
+        return highlight
+    }
+
+    func restyleHighlight(_ id: UUID, style: HighlightStyle? = nil, color: HighlightColor? = nil) {
+        guard let highlight = highlight(withID: id) else { return }
+        if let style { highlight.style = style }
+        if let color { highlight.color = color }
+        rememberHighlight(style: highlight.style, color: highlight.color)
+        persist()
+    }
+
+    /// Saved marks under a selection, oldest first. Marks made before
+    /// character ranges were kept are matched by where they sit on the page.
+    func highlights(overlapping selection: PageTextSelection) -> [Highlight] {
+        book.highlights
+            .filter { highlight in
+                guard highlight.location.pdfPageIndex == selection.pageIndex else { return false }
+                if let range = highlight.characterRange {
+                    return NSIntersectionRange(range, selection.range).length > 0
+                }
+                return highlight.normalizedRects.contains { mark in
+                    selection.lineRects.contains { line in
+                        let overlap = mark.intersection(line)
+                        return !overlap.isNull && overlap.width * overlap.height > 0
+                    }
+                }
+            }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func deleteHighlights(_ ids: [UUID]) {
+        let doomed = book.highlights.filter { ids.contains($0.id) }
+        guard !doomed.isEmpty else { return }
+        doomed.forEach(context.delete)
+        persist()
+    }
+
+    func deleteHighlight(_ id: UUID) {
+        guard let highlight = highlight(withID: id) else { return }
+        context.delete(highlight)
+        persist()
+    }
+
+    private func rememberHighlight(style: HighlightStyle, color: HighlightColor) {
+        if settings.lastHighlightStyle != style { settings.lastHighlightStyle = style }
+        if settings.lastHighlightColor != color { settings.lastHighlightColor = color }
     }
 
     // MARK: Search

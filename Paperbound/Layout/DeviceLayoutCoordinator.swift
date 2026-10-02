@@ -444,16 +444,38 @@ enum DeviceLayoutCoordinator {
             }
             return [CGRect(origin: .zero, size: size)]
         case .spread:
+            // The two leaves meet at the spine, the way an open book does. The
+            // gutter is a crease drawn over the seam (`seam(in:layout:)`), never
+            // a strip of board between the pages; text is kept off a hardware
+            // fold by the reserved regions, not by leaving the fold unpainted.
             if let division = activeDivision(in: layout) {
-                return divisionPageRects(in: size, division: division)
+                return seamPageRects(in: size, division: division)
             }
-            let gutter = size.width * CGFloat(layout.spineFraction)
-            let half = (size.width - gutter) / 2
+            let half = size.width / 2
             return [
                 CGRect(x: 0, y: 0, width: half, height: size.height),
-                CGRect(x: half + gutter, y: 0, width: half, height: size.height)
+                CGRect(x: half, y: 0, width: size.width - half, height: size.height)
             ]
         }
+    }
+
+    /// Where the two leaves of a spread meet, and how wide the crease over it
+    /// reads, in the surface's coordinate space. `nil` outside a spread.
+    ///
+    /// The crease is the presentation's gutter width, or the hardware fold's
+    /// width where the device reports one, so a real hinge creases the page
+    /// exactly where the screen bends.
+    static func seam(in size: CGSize, layout: ReadingSurfaceLayout) -> (line: CGFloat, width: CGFloat, axis: ReadingDivisionAxis)? {
+        guard layout.mode == .spread, size.width > 0, size.height > 0 else { return nil }
+        if let division = activeDivision(in: layout) {
+            let fold = division.region.intersection(CGRect(origin: .zero, size: size))
+            guard !fold.isNull else { return nil }
+            switch division.axis {
+            case .vertical: return (fold.midX, fold.width, .vertical)
+            case .horizontal: return (fold.midY, fold.height, .horizontal)
+            }
+        }
+        return (size.width / 2, size.width * CGFloat(layout.spineFraction), .vertical)
     }
 
     private struct ActiveDivision {
@@ -508,6 +530,30 @@ enum DeviceLayoutCoordinator {
             panels = [
                 CGRect(x: 0, y: 0, width: size.width, height: fold.minY),
                 CGRect(x: 0, y: fold.maxY, width: size.width, height: size.height - fold.maxY)
+            ]
+        }
+        return panels.filter { $0.width > 0 && $0.height > 0 }
+    }
+
+    /// The two leaves of a spread across a fold, meeting at its centre line.
+    /// Each leaf carries its half of the fold as paper; the fold stays a
+    /// reserved region, so no text is placed on it.
+    private static func seamPageRects(in size: CGSize, division: ActiveDivision) -> [CGRect] {
+        let fold = division.region.intersection(CGRect(origin: .zero, size: size))
+        guard !fold.isNull else { return [] }
+        let panels: [CGRect]
+        switch division.axis {
+        case .vertical:
+            guard fold.width > 0 else { return [] }
+            panels = [
+                CGRect(x: 0, y: 0, width: fold.midX, height: size.height),
+                CGRect(x: fold.midX, y: 0, width: size.width - fold.midX, height: size.height)
+            ]
+        case .horizontal:
+            guard fold.height > 0 else { return [] }
+            panels = [
+                CGRect(x: 0, y: 0, width: size.width, height: fold.midY),
+                CGRect(x: 0, y: fold.midY, width: size.width, height: size.height - fold.midY)
             ]
         }
         return panels.filter { $0.width > 0 && $0.height > 0 }

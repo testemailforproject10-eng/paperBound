@@ -19,6 +19,10 @@ import SwiftData
         let defaults = try XCTUnwrap(UserDefaults(suiteName:suite))
         defer { defaults.removePersistentDomain(forName:suite) }
         let settings = AppSettings(defaults:defaults)
+        // Measures loading, not turn animation: the 350 ms pause between turns
+        // assumes a turn has finished, which holds for the slide's 0.28 s turn
+        // and not for a curl or flip.
+        settings.pageTurnStyle = .slide
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         var results: [[String:Any]] = []
         for effect in PageEffect.allCases {

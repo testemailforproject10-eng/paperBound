@@ -141,7 +141,9 @@ struct PhysicalPageView: View {
                     .frame(width: displaySize.width, height: displaySize.height)
                     .allowsHitTesting(false)
             } else { image(background).onAppear { InkMetrics.event("First paper presentation") } }
-            if state == .waiting { loading }
+            // A prepared page waiting for its turn to land is just blank
+            // paper; only one still preparing shows the spinner.
+            if state == .waiting, session == nil || sessionKey != simulationKey, !gpuFailed { loading }
         } else {
             image(page.image).onAppear { InkMetrics.event("Finished page presentation") }
         }

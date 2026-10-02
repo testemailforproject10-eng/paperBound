@@ -41,7 +41,12 @@ final class ReaderPagingCoordinator {
         requestedUnit = unit
         renderIdentities = renders
         firstFrames.removeAll()
-        sequence = enchanted ? EnchantedInkRevealSequence(unit: unit, pageIdentities: pages) : nil
+        // A turned page rests blank before the ink starts; opening the book
+        // or switching the ink on writes straight away.
+        let delay = source == .opening || source == .settings ? 0 : EnchantedInkRevealSequence.landingPause
+        sequence = enchanted
+            ? EnchantedInkRevealSequence(unit: unit, pageIdentities: pages, startDelay: delay)
+            : nil
         if enchanted { visitCount += 1 }
         if !animationsAllowed { finish(reason: "accessibility or lifecycle") }
         trace("request unit=\(unit)")

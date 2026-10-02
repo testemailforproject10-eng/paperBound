@@ -13,6 +13,7 @@ struct EnvironmentEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppSettings.self) private var settings
     @State private var previewReplayToken = 0
     @State private var previewPageEffectVisitID = UUID()
     @State private var previewPageEffectVisit: PageEffectVisit?
@@ -28,6 +29,7 @@ struct EnvironmentEditorView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 8)
                 List {
+                    pageTurnSection
                     pageEffectsSection
                     defaultsSection
                 }
@@ -133,6 +135,19 @@ struct EnvironmentEditorView: View {
     }
 
     // MARK: - Effects
+
+    private var pageTurnSection: some View {
+        Section {
+            PageTurnPicker(selection: Binding(
+                get: { settings.pageTurnStyle },
+                set: { settings.pageTurnStyle = $0 }
+            ))
+        } header: {
+            Text("Page turn")
+        } footer: {
+            if reduceMotion { Text("Reduce Motion is on, so pages slide.") }
+        }
+    }
 
     private var pageEffectsSection: some View {
         Section("Page effects") {

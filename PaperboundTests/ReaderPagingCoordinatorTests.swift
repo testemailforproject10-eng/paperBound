@@ -21,9 +21,9 @@ import XCTest
         c.readiness(try identity(c, page: "right"), seed: 2, at: now)
         XCTAssertEqual(c.sequence?.phase, .waiting)
         XCTAssertFalse(c.settle(unit: 2, at: now))
-        c.observe(unit: 4, fraction: 0.049, at: now)
-        XCTAssertEqual(c.sequence?.phase, .waiting)
-        c.observe(unit: 4, fraction: 0.05, at: now)
+        c.observe(unit: 4, fraction: 0.6, at: now)
+        XCTAssertEqual(c.sequence?.phase, .waiting, "The ink waits for the turn to land.")
+        c.observe(unit: 4, fraction: 1, at: now)
         XCTAssertEqual(c.sequence?.phase, .revealing)
         XCTAssertEqual(c.sequence?.startDates["left"], c.sequence?.startDates["right"])
         XCTAssertTrue(c.settle(unit: 4, at: now))
@@ -55,9 +55,10 @@ import XCTest
         c.readiness(InkPreparationIdentity(page: "page", render: "stale", visit: current.visit), seed: 1, at: now)
         XCTAssertEqual(c.sequence?.phase, .waiting)
         c.readiness(current, seed: 1, at: now)
-        c.completed(old, startedAt: now, at: now.addingTimeInterval(4))
+        let start = try XCTUnwrap(c.sequence?.startDates["page"])
+        c.completed(old, startedAt: start, at: start.addingTimeInterval(4))
         XCTAssertEqual(c.sequence?.phase, .revealing)
-        c.completed(current, startedAt: now, at: now.addingTimeInterval(4))
+        c.completed(current, startedAt: start, at: start.addingTimeInterval(4))
         XCTAssertEqual(c.sequence?.phase, .finished)
         XCTAssertEqual(c.completedVisits, 1)
     }
@@ -74,5 +75,16 @@ import XCTest
         c.deferReplay(); c.disable()
         XCTAssertFalse(c.pendingReplay)
         XCTAssertNil(c.sequence)
+    }
+    func testTurnsPauseBeforeTheInkButOpeningAndSettingsDoNot() throws {
+        let pause = EnchantedInkRevealSequence.landingPause
+        for (source, delay) in [(ReaderNavigationRequest.Source.swipe, pause), (.edgeTap, pause), (.slider, pause),
+                                (.destination, pause), (.opening, 0), (.settings, 0)] {
+            let c = ReaderPagingCoordinator(); c.relocate(unit: 0)
+            request(c, 3, source: source)
+            c.readiness(try identity(c), seed: 1, at: now)
+            c.observe(unit: 3, fraction: 1, at: now)
+            XCTAssertEqual(c.sequence?.startDates["page"], now.addingTimeInterval(delay), "\(source)")
+        }
     }
 }

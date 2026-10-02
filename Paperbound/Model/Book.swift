@@ -190,14 +190,23 @@ final class Highlight {
     var rectsData: Data?
     var orderKey: Double
     var book: Book?
+    /// How the mark is drawn. Defaulted so stores written before styles
+    /// existed migrate without a schema version.
+    var styleRaw: String = HighlightStyle.highlight.rawValue
+    /// Character range in the page's text layer, so the mark can be redrawn
+    /// from the text itself. -1 when unknown (marks made before ranges were kept).
+    var rangeLocation: Int = -1
+    var rangeLength: Int = 0
 
     init(
         id: UUID = UUID(),
         quotedText: String,
         note: String = "",
         color: HighlightColor = .butter,
+        style: HighlightStyle = .highlight,
         location: ReadingLocation,
         normalizedRects: [CGRect],
+        characterRange: NSRange? = nil,
         orderKey: Double,
         createdAt: Date = .now
     ) {
@@ -205,6 +214,9 @@ final class Highlight {
         self.quotedText = quotedText
         self.note = note
         self.colorRaw = color.rawValue
+        self.styleRaw = style.rawValue
+        self.rangeLocation = characterRange?.location ?? -1
+        self.rangeLength = characterRange?.length ?? 0
         self.orderKey = orderKey
         self.createdAt = createdAt
         self.locationData = try? JSONEncoder().encode(location)
@@ -214,7 +226,23 @@ final class Highlight {
     }
 
     var color: HighlightColor {
-        HighlightColor(rawValue: colorRaw) ?? .butter
+        get { HighlightColor(rawValue: colorRaw) ?? .butter }
+        set { colorRaw = newValue.rawValue }
+    }
+
+    var style: HighlightStyle {
+        get { HighlightStyle(rawValue: styleRaw) ?? .highlight }
+        set { styleRaw = newValue.rawValue }
+    }
+
+    var characterRange: NSRange? {
+        rangeLocation >= 0 ? NSRange(location: rangeLocation, length: rangeLength) : nil
+    }
+
+    /// The mark as the page overlay draws it.
+    var pageMark: PageMark {
+        PageMark(id: id, style: style, color: color, lineRects: normalizedRects,
+                 hasNote: !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var location: ReadingLocation {

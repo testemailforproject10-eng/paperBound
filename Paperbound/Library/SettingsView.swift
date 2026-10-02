@@ -23,6 +23,7 @@ struct SettingsView: View {
         List {
             textEffectsSection
             pageEffectsSection
+            pageTurnSection
             readingSection
             speechSection
             storageSection
@@ -48,6 +49,15 @@ struct SettingsView: View {
     private var pageEffectsSection: some View {
         Section("Page effects") {
             PageEffectPicker(selection: environmentBinding(\.pageEffect))
+        }
+    }
+
+    private var pageTurnSection: some View {
+        Section("Page turn") {
+            PageTurnPicker(selection: Binding(
+                get: { settings.pageTurnStyle },
+                set: { settings.pageTurnStyle = $0 }
+            ))
         }
     }
 

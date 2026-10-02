@@ -17,6 +17,9 @@ final class AppSettings {
     private enum Key {
         static let defaultEnvironment = "settings.defaultEnvironment"
         static let spreadPreference = "settings.spreadPreference"
+        static let pageTurnStyle = "settings.pageTurnStyle"
+        static let highlightStyle = "settings.lastHighlightStyle"
+        static let highlightColor = "settings.lastHighlightColor"
         static let keepScreenAwake = "settings.keepScreenAwake"
         static let speechRate = "settings.speechRate"
         static let librarySort = "settings.librarySort"
@@ -36,6 +39,21 @@ final class AppSettings {
 
     var spreadPreference: SpreadPreference {
         didSet { defaults.set(spreadPreference.rawValue, forKey: Key.spreadPreference) }
+    }
+
+    /// How pages turn in the reader. App-wide: it is how the reader handles
+    /// paper, not part of any one book's look.
+    var pageTurnStyle: PageTurnStyle {
+        didSet { defaults.set(pageTurnStyle.rawValue, forKey: Key.pageTurnStyle) }
+    }
+
+    /// The last style and colour used, so marking text is one tap.
+    var lastHighlightStyle: HighlightStyle {
+        didSet { defaults.set(lastHighlightStyle.rawValue, forKey: Key.highlightStyle) }
+    }
+
+    var lastHighlightColor: HighlightColor {
+        didSet { defaults.set(lastHighlightColor.rawValue, forKey: Key.highlightColor) }
     }
 
     var keepScreenAwake: Bool {
@@ -64,6 +82,17 @@ final class AppSettings {
         self.spreadPreference = SpreadPreference(
             rawValue: defaults.string(forKey: Key.spreadPreference) ?? ""
         ) ?? .automatic
+
+        self.pageTurnStyle = PageTurnStyle(
+            rawValue: defaults.string(forKey: Key.pageTurnStyle) ?? ""
+        ) ?? .curl
+
+        self.lastHighlightStyle = HighlightStyle(
+            rawValue: defaults.string(forKey: Key.highlightStyle) ?? ""
+        ) ?? .highlight
+        self.lastHighlightColor = HighlightColor(
+            rawValue: defaults.string(forKey: Key.highlightColor) ?? ""
+        ) ?? .butter
 
         self.keepScreenAwake = defaults.object(forKey: Key.keepScreenAwake) as? Bool ?? true
 
