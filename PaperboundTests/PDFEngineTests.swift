@@ -347,7 +347,10 @@ final class LibraryStoreTests: XCTestCase {
         }
     }
 
-    func testEpubIsRefusedUntilAReflowableEngineExists() throws {
+    /// EPUB import is asynchronous (`importBook`, see EPUBImportTests); the
+    /// synchronous PDF entry point must keep refusing it rather than copy an
+    /// unchecked file into the library.
+    func testSynchronousImportLeavesEpubToTheAsyncPath() throws {
         let fake = FileManager.default.temporaryDirectory
             .appendingPathComponent("book-\(UUID().uuidString).epub")
         try Data("PK not really".utf8).write(to: fake)

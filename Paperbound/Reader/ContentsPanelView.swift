@@ -22,7 +22,9 @@ struct ContentsPanelView: View {
                     ContentUnavailableView {
                         Label("No contents", systemImage: "list.bullet.rectangle")
                     } description: {
-                        Text("This PDF does not carry an outline. Use search or the page slider to move around.")
+                        Text(model.epubEngine != nil
+                             ? "This book does not carry a table of contents. Use search or the page slider to move around."
+                             : "This PDF does not carry an outline. Use search or the page slider to move around.")
                     }
                 } else {
                     List(model.outline) { item in
@@ -35,7 +37,7 @@ struct ContentsPanelView: View {
                                     .font(item.depth == 0 ? .callout.weight(.semibold) : .callout)
                                     .lineLimit(2)
                                 Spacer(minLength: 8)
-                                Text("\((item.location.pdfPageIndex ?? 0) + 1)")
+                                Text(pageLabel(for: item))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
@@ -54,7 +56,18 @@ struct ContentsPanelView: View {
                 }
             }
         }
-        .task { await model.loadOutlineIfNeeded() }
+        // Keyed on loading, so a panel opened while the book is still opening
+        // (e.g. `-paperbound-demo-panel contents`) loads the outline once it can.
+        .task(id: model.isLoading) { await model.loadOutlineIfNeeded() }
+    }
+
+    /// PDF: the page number. EPUB: the Readium position the entry starts in,
+    /// the same numbering as the slider and the search results.
+    private func pageLabel(for item: OutlineItem) -> String {
+        if let epubEngine = model.epubEngine {
+            return epubEngine.label(for: item.location)
+        }
+        return "\((item.location.pdfPageIndex ?? 0) + 1)"
     }
 }
 

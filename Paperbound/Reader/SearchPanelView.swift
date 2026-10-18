@@ -87,6 +87,10 @@ struct SearchPanelView: View {
         } else {
             List(model.searchResults) { result in
                 Button {
+                    if model.epubEngine != nil {
+                        // EPUB: mark the match for a moment, so it can be found on the page.
+                        model.epubAnnotations.flash(result)
+                    }
                     model.go(to: result.location)
                     dismiss()
                 } label: {

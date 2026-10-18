@@ -14,7 +14,7 @@ struct RootView: View {
     var body: some View {
         LibraryView()
             .onOpenURL { url in
-                // A PDF opened from Files or a share sheet lands here.
+                // A PDF or EPUB opened from Files or a share sheet lands here.
                 library.importFiles([url], into: context)
             }
     }

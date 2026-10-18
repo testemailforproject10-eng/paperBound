@@ -23,6 +23,8 @@ final class AppSettings {
         static let keepScreenAwake = "settings.keepScreenAwake"
         static let speechRate = "settings.speechRate"
         static let librarySort = "settings.librarySort"
+        static let epubTypography = "settings.epubTypography"
+        static let epubTypographyOverrides = "settings.epubTypographyOverrides"
     }
 
     private let defaults: UserDefaults
@@ -69,6 +71,21 @@ final class AppSettings {
         didSet { defaults.set(librarySort.rawValue, forKey: Key.librarySort) }
     }
 
+    /// EPUB typography every book uses unless it has its own override. Read
+    /// and edit through `typography(for:)` / `setTypography(_:for:)` in
+    /// `TypographyStore.swift`.
+    var epubTypography: TypographySettings {
+        didSet { defaults.set(TypographySettings.encodeGlobal(epubTypography), forKey: Key.epubTypography) }
+    }
+
+    /// Per-book typography overrides, keyed by `Book.id`.
+    var epubTypographyOverrides: [UUID: TypographySettings] {
+        didSet {
+            defaults.set(TypographySettings.encodeOverrides(epubTypographyOverrides),
+                         forKey: Key.epubTypographyOverrides)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -101,6 +118,14 @@ final class AppSettings {
         self.librarySort = LibrarySort(
             rawValue: defaults.string(forKey: Key.librarySort) ?? ""
         ) ?? .recentlyOpened
+
+        self.epubTypography = TypographySettings.decodeGlobal(defaults.data(forKey: Key.epubTypography))
+        self.epubTypographyOverrides = TypographySettings.decodeOverrides(
+            defaults.data(forKey: Key.epubTypographyOverrides)
+        )
+        #if DEBUG
+        if let demo = TypographySettings.demoLaunchOverride { self.epubTypography = demo }
+        #endif
         persistEnvironment()
     }
 

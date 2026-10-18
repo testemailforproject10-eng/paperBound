@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		PB00000000000000000000E1 /* ReadiumShared in Frameworks */ = {isa = PBXBuildFile; productRef = PB00000000000000000000D1 /* ReadiumShared */; };
+		PB00000000000000000000E2 /* ReadiumStreamer in Frameworks */ = {isa = PBXBuildFile; productRef = PB00000000000000000000D2 /* ReadiumStreamer */; };
+		PB00000000000000000000E3 /* ReadiumNavigator in Frameworks */ = {isa = PBXBuildFile; productRef = PB00000000000000000000D3 /* ReadiumNavigator */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		PB0000000000000000000081 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,6 +35,25 @@
 			);
 			target = PB0000000000000000000040 /* Paperbound */;
 		};
+		PB0000000000000000000004 /* Exceptions for "PaperboundTests" folder in "PaperboundTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Fixtures/epub-src/META-INF/container.xml",
+				"Fixtures/epub-src/OEBPS/chapter1.xhtml",
+				"Fixtures/epub-src/OEBPS/chapter2.xhtml",
+				"Fixtures/epub-src/OEBPS/chapter3.xhtml",
+				"Fixtures/epub-src/OEBPS/chapter4.xhtml",
+				"Fixtures/epub-src/OEBPS/content.opf",
+				"Fixtures/epub-src/OEBPS/cover.xhtml",
+				"Fixtures/epub-src/OEBPS/images/cover.png",
+				"Fixtures/epub-src/OEBPS/images/lantern.png",
+				"Fixtures/epub-src/OEBPS/nav.xhtml",
+				"Fixtures/epub-src/OEBPS/style.css",
+				"Fixtures/epub-src/extras/encryption.xml",
+				"Fixtures/epub-src/mimetype",
+			);
+			target = PB0000000000000000000041 /* PaperboundTests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +67,9 @@
 		};
 		PB0000000000000000000002 /* PaperboundTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				PB0000000000000000000004 /* Exceptions for "PaperboundTests" folder in "PaperboundTests" target */,
+			);
 			path = PaperboundTests;
 			sourceTree = "<group>";
 		};
@@ -52,6 +80,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				PB00000000000000000000E1 /* ReadiumShared in Frameworks */,
+				PB00000000000000000000E2 /* ReadiumStreamer in Frameworks */,
+				PB00000000000000000000E3 /* ReadiumNavigator in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -103,6 +134,9 @@
 			);
 			name = Paperbound;
 			packageProductDependencies = (
+				PB00000000000000000000D1 /* ReadiumShared */,
+				PB00000000000000000000D2 /* ReadiumStreamer */,
+				PB00000000000000000000D3 /* ReadiumNavigator */,
 			);
 			productName = Paperbound;
 			productReference = PB0000000000000000000030 /* Paperbound.app */;
@@ -159,6 +193,9 @@
 			);
 			mainGroup = PB0000000000000000000020;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				PB00000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-toolkit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = PB0000000000000000000021 /* Products */;
 			projectDirPath = "";
@@ -385,6 +422,35 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		PB00000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-toolkit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/readium/swift-toolkit";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 3.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		PB00000000000000000000D1 /* ReadiumShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PB00000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumShared;
+		};
+		PB00000000000000000000D2 /* ReadiumStreamer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PB00000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumStreamer;
+		};
+		PB00000000000000000000D3 /* ReadiumNavigator */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PB00000000000000000000F0 /* XCRemoteSwiftPackageReference "swift-toolkit" */;
+			productName = ReadiumNavigator;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = PB0000000000000000000090 /* Project object */;
 }

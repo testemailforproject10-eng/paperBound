@@ -119,11 +119,11 @@ struct SettingsView: View {
     private var formatsSection: some View {
         Section {
             LabeledContent("PDF", value: "Supported")
-            LabeledContent("EPUB", value: "Not yet")
+            LabeledContent("EPUB", value: "Supported")
         } header: {
             Text("Formats")
         } footer: {
-            Text("EPUB arrives with a reflowable engine of its own. DRM-protected purchases from other stores cannot be imported.")
+            Text("EPUB text reflows, so you choose the font, size and colours. DRM-protected books (Adobe, LCP or Apple Books purchases) cannot be opened and are refused at import; DRM-free EPUBs work normally.")
         }
     }
 

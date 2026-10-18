@@ -34,6 +34,10 @@ final class Book {
 
     var title: String
     var author: String?
+    /// BCP 47 language from the book's own metadata (EPUB `dc:language`); nil
+    /// for PDFs and books that do not declare one. Optional with a default, so
+    /// existing stores migrate without a schema version.
+    var language: String? = nil
 
     /// File name inside the app's managed Books directory. Never an outside path.
     var fileName: String
@@ -197,6 +201,13 @@ final class Highlight {
     /// from the text itself. -1 when unknown (marks made before ranges were kept).
     var rangeLocation: Int = -1
     var rangeLength: Int = 0
+    /// EPUB only: the mark's Readium `Locator` as JSON (href plus the quoted
+    /// text with its context), which is what Readium anchors the decoration
+    /// on, so the mark survives font, size and margin changes. For EPUB marks
+    /// the character range above is in the chapter's whitespace-free text
+    /// (see EPUBAnnotationsAnchor.swift). nil for PDF marks; defaulted so
+    /// existing stores migrate without a schema version.
+    var locatorJSON: String? = nil
 
     init(
         id: UUID = UUID(),

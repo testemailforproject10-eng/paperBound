@@ -20,20 +20,12 @@ struct EnvironmentEditorView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Text effects").font(.caption).foregroundStyle(.secondary)
-                    TextEffectPicker(selection: bind(\.ink))
-                    previewRow
+            Group {
+                if model.book.format == .epub {
+                    epubNotice
+                } else {
+                    effectsEditor
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-                List {
-                    pageTurnSection
-                    pageEffectsSection
-                    defaultsSection
-                }
-                .listStyle(.insetGrouped)
             }
             .navigationTitle("Reading environment")
             .navigationBarTitleDisplayMode(.inline)
@@ -43,6 +35,40 @@ struct EnvironmentEditorView: View {
                 }
             }
         }
+    }
+
+    private var effectsEditor: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Text effects").font(.caption).foregroundStyle(.secondary)
+                TextEffectPicker(selection: bind(\.ink))
+                previewRow
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            List {
+                pageTurnSection
+                pageEffectsSection
+                defaultsSection
+            }
+            .listStyle(.insetGrouped)
+        }
+    }
+
+    /// The effects work on rendered page images; an EPUB is live text in a
+    /// web view, so none of them apply yet (Docs/EPUB_README.md, Phase 6).
+    private var epubNotice: some View {
+        List {
+            Section {
+                Label {
+                    Text("Page turns, Enchanted Ink, page effects and paper work on PDF books only for now, because EPUB text is drawn live rather than as page images.")
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
+                .accessibilityIdentifier("reader.environment.epubNotice")
+            }
+        }
+        .listStyle(.insetGrouped)
     }
 
     // MARK: - Preview

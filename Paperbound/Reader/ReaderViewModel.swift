@@ -42,8 +42,18 @@ enum ReaderPanel: String, Identifiable, Sendable {
     case contents
     case search
     case bookmarks
+    /// EPUB only: font, size, theme, margins (`TypographyPanel`).
+    case typography
 
     var id: String { rawValue }
+}
+
+/// A move the app asks the EPUB navigator to make. Each request is a fresh
+/// value (new `id`), so jumping to the same place twice still fires.
+struct EPUBNavigationRequest: Equatable {
+    let id = UUID()
+    let location: ReadingLocation
+    let source: ReaderNavigationRequest.Source
 }
 
 @MainActor
@@ -59,8 +69,27 @@ final class ReaderViewModel {
 
     // MARK: Engine
 
+    /// The PDF engine, when the open book is a PDF. PDF-only paths (page
+    /// images, PDFKit's view, text selectors, page-rect highlights) use this.
     private(set) var engine: PDFReadingEngine?
+    /// The Readium engine, when the open book is an EPUB. Its `publication`
+    /// is what `EPUBReaderView` hands to the navigator.
+    private(set) var epubEngine: EPUBReadingEngine?
+    /// The live Readium navigator, for typography and reading tools: submit
+    /// preferences, draw decorations, read the selection. Idle for PDFs.
+    /// See `EPUBNavigatorBridge` and Docs/EPUB_README.md, "Notes from Phase 3".
+    let epubBridge = EPUBNavigatorBridge()
+    /// EPUB highlights, the selection bar and search-result flashes, drawn
+    /// through `epubBridge`. See EPUBAnnotationsController.swift.
+    let epubAnnotations = EPUBAnnotationsController()
     private(set) var provider: PageImageProvider?
+
+    /// Whichever engine is open, for the format-neutral paths: progress,
+    /// labels, outline, bookmarks, search and speech.
+    var readingEngine: (any ReadingEngine)? {
+        if let engine { return engine }
+        return epubEngine
+    }
 
     // MARK: State
 
@@ -96,6 +125,10 @@ final class ReaderViewModel {
     var layout: ReadingSurfaceLayout = .singlePage
     let paging = ReaderPagingCoordinator()
     private(set) var navigationRequest: ReaderNavigationRequest?
+    /// The EPUB counterpart of `navigationRequest`: set when the app (contents,
+    /// search, bookmarks, slider, edge taps) asks the navigator to move.
+    /// Positions Readium itself reports never produce one.
+    private(set) var epubNavigationRequest: EPUBNavigationRequest?
     var sliderSelection: Double?
     var isPanelPresented = false
     var activePanel: ReaderPanel? {
@@ -129,6 +162,9 @@ final class ReaderViewModel {
         self.context = context
         self.storedEnvironment = settings.environment(for: book)
         if book.environmentData != nil { book.savedEnvironment = storedEnvironment }
+        // EPUB typography: given to the navigator when it is created, so the
+        // first layout already uses it. `TypographyPanel` resubmits on change.
+        if book.format == .epub { epubBridge.submit(settings.typography(for: book.id).epubPreferences) }
 
         #if DEBUG
         // `-paperbound-demo-mode document` opens straight into the PDFKit
@@ -160,6 +196,11 @@ final class ReaderViewModel {
         defer { InkMetrics.end("Reader opening", timing) }
         isLoading = true
         loadError = nil
+        if book.format == .epub {
+            await loadEPUB()
+            isLoading = false
+            return
+        }
         if environment.ink == .enchanted { InkGPUResources.prewarm() }
         do {
             let url = store.fileURL(for: book)
@@ -186,6 +227,35 @@ final class ReaderViewModel {
         isLoading = false
     }
 
+    /// EPUB has no page images, ink or wear yet (Phase 6), so opening one is
+    /// just the engine: no provider, no GPU prewarm.
+    private func loadEPUB() async {
+        do {
+            let url = store.fileURL(for: book)
+            let engine = try EPUBReadingEngine(
+                documentID: book.id,
+                fileURL: url,
+                initialLocation: book.savedLocation
+            )
+            try await engine.open()
+
+            // Before the surface builds a navigator: decoration templates
+            // are creation-time configuration.
+            epubAnnotations.install(model: self)
+            self.epubEngine = engine
+            self.pageCount = engine.pageCount
+            self.capabilities = engine.capabilities
+            self.currentLocation = engine.currentLocation()
+            if book.pageCount != engine.pageCount {
+                book.pageCount = engine.pageCount
+            }
+            book.lastOpenedAt = .now
+            persist()
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
     func unload() {
         textSelection.clear()
         textSelectors.removeAll()
@@ -193,11 +263,12 @@ final class ReaderViewModel {
         speech.stop()
         persist()
         engine?.close()
+        epubEngine?.close()
         provider?.invalidateAll()
     }
 
     func loadOutlineIfNeeded() async {
-        guard !outlineLoaded, !isLoadingOutline, let engine else { return }
+        guard !outlineLoaded, !isLoadingOutline, let engine = readingEngine else { return }
         isLoadingOutline = true
         // Let the contents sheet appear before PDFKit walks a large outline.
         await Task.yield()
@@ -250,31 +321,43 @@ final class ReaderViewModel {
 
     // MARK: Navigation
 
+    /// The page index for PDFs; for EPUBs the index of the Readium position,
+    /// so the slider and its "Page n of m" read the same way for both.
     var currentPageIndex: Int {
-        currentLocation.pdfPageIndex ?? 0
+        currentLocation.pdfPageIndex ?? epubEngine?.positionIndex(for: currentLocation) ?? 0
     }
 
     var progress: Double {
-        engine?.normalizedProgress(for: currentLocation) ?? 0
+        readingEngine?.normalizedProgress(for: currentLocation) ?? 0
     }
 
     var positionLabel: String {
-        guard let engine else { return "—" }
+        guard let engine = readingEngine else { return "—" }
         return "Page \(engine.label(for: currentLocation)) of \(max(1, engine.pageCount))"
     }
 
     func go(toPageIndex index: Int, source: ReaderNavigationRequest.Source = .destination) {
+        if let epubEngine {
+            guard index >= 0, index < epubEngine.positions.count else { return }
+            setLocation(ReadingLocation(locator: epubEngine.positions[index]), source: source)
+            return
+        }
         guard let engine, index >= 0, index < engine.pageCount else { return }
         setLocation(.pdfPage(index: index, yOffset: 0), source: source)
     }
 
     func go(to location: ReadingLocation) {
+        if epubEngine != nil, location.epubHref != nil {
+            setLocation(location)
+            return
+        }
         guard location.pdfPageIndex != nil else { return }
         setLocation(location)
     }
 
     func advance(by delta: Int, source: ReaderNavigationRequest.Source = .edgeTap) {
-        guard let engine, let next = engine.location(byAdvancing: currentLocation, pages: delta) else { return }
+        guard let engine = readingEngine,
+              let next = engine.location(byAdvancing: currentLocation, pages: delta) else { return }
         setLocation(next, source: source)
     }
 
@@ -284,12 +367,24 @@ final class ReaderViewModel {
         setLocation(.pdfPage(index: pageIndex, yOffset: 0), announce: false)
     }
 
+    /// Called by the EPUB surface whenever Readium reports a new location
+    /// (page turns, swipes, link jumps). Saves it without echoing a request
+    /// back to the navigator that produced it.
+    func reportVisible(epubLocation location: ReadingLocation) {
+        guard location.epubHref != nil, location != currentLocation else { return }
+        setLocation(location, announce: false)
+    }
+
     private func setLocation(_ location: ReadingLocation, announce: Bool = true,
                              source: ReaderNavigationRequest.Source = .destination) {
-        if announce, location.pdfPageIndex != currentPageIndex {
-            navigationRequest = ReaderNavigationRequest(pageIndex: location.pdfPageIndex ?? 0, source: source)
+        if announce, let pageIndex = location.pdfPageIndex, pageIndex != currentPageIndex {
+            navigationRequest = ReaderNavigationRequest(pageIndex: pageIndex, source: source)
+        }
+        if announce, location.epubHref != nil {
+            epubNavigationRequest = EPUBNavigationRequest(location: location, source: source)
         }
         currentLocation = location
+        let engine = readingEngine
         Task { try? await engine?.go(to: location) }
         book.savedLocation = location
         book.progress = engine?.normalizedProgress(for: location) ?? book.progress
@@ -334,13 +429,13 @@ final class ReaderViewModel {
     // MARK: Bookmarks
 
     var currentPageIsBookmarked: Bool {
-        guard let engine else { return false }
+        guard let engine = readingEngine else { return false }
         let key = engine.orderKey(for: currentLocation)
         return book.bookmarks.contains { $0.orderKey == key }
     }
 
     func toggleBookmark() {
-        guard let engine else { return }
+        guard let engine = readingEngine else { return }
         let key = engine.orderKey(for: currentLocation)
         if let existing = book.bookmarks.first(where: { $0.orderKey == key }) {
             context.delete(existing)
@@ -484,7 +579,7 @@ final class ReaderViewModel {
         }
         isSearching = true
         searchTask = Task { [weak self] in
-            guard let self, let engine = self.engine else { return }
+            guard let self, let engine = self.readingEngine else { return }
             let results = (try? await engine.search(query)) ?? []
             if Task.isCancelled { return }
             self.searchResults = results
@@ -502,6 +597,20 @@ final class ReaderViewModel {
     // MARK: Speech
 
     func speakCurrentPage() {
+        if let epubEngine {
+            // Readium reads text asynchronously; the protocol's `text(at:)`
+            // only answers from what has already been loaded.
+            let location = currentLocation
+            Task { [weak self] in
+                guard let self else { return }
+                if let text = await epubEngine.loadText(at: location), !text.isEmpty {
+                    self.speech.speak(text, rate: self.settings.speechRate)
+                } else {
+                    self.speech.stop()
+                }
+            }
+            return
+        }
         guard let engine, let text = engine.text(at: currentLocation), !text.isEmpty else {
             speech.stop()
             return

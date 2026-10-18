@@ -16,7 +16,14 @@ enum ReadingLocation: Codable, Hashable, Sendable {
 
     /// Reflowable position. The resource `href` plus progression inside it is
     /// preserved across font and margin changes; a rendered page number is not.
-    case epubLocator(href: String, progression: Double, totalProgression: Double?)
+    ///
+    /// `locatorJSON` is the full Readium `Locator` and is the source of truth:
+    /// it also carries the position number, text context and fragments that a
+    /// navigator needs to land on the same sentence. `href`, `progression` and
+    /// `totalProgression` are copies of its fields, kept so labels, sorting and
+    /// the model layer never have to parse JSON or import Readium. Build these
+    /// with `ReadingLocation(locator:)` (EPUBLocator.swift), not by hand.
+    case epubLocator(href: String, progression: Double, totalProgression: Double?, locatorJSON: String)
 
     /// Used before a document has reported a real position.
     case start
@@ -31,7 +38,7 @@ enum ReadingLocation: Codable, Hashable, Sendable {
         switch self {
         case let .pdfPage(index, _):
             return pageCount > 0 ? "Page \(index + 1) of \(pageCount)" : "Page \(index + 1)"
-        case let .epubLocator(href, progression, total):
+        case let .epubLocator(href, progression, total, _):
             if let total {
                 return "\(Int((total * 100).rounded()))% · \(href)"
             }

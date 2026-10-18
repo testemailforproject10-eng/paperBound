@@ -63,7 +63,7 @@ struct ReaderView: View {
                 .ignoresSafeArea()
 
             Group {
-                if let error = model.loadError, model.engine == nil {
+                if let error = model.loadError, model.readingEngine == nil {
                     failureView(error)
                 } else if model.isLoading {
                     ProgressView().tint(.white)
@@ -120,7 +120,7 @@ struct ReaderView: View {
         ), onDismiss: { model.isPanelPresented = false }) { panel in
             panelContent(panel, model: model)
                 .presentationDetents(
-                    panel == .environment && !Self.opensPanelsExpanded
+                    (panel == .environment || panel == .typography) && !Self.opensPanelsExpanded
                         ? [.medium, .large]
                         : [.large]
                 )
@@ -141,6 +141,17 @@ struct ReaderView: View {
 
     @ViewBuilder
     private func readingSurface(_ model: ReaderViewModel) -> some View {
+        // EPUB is a separate surface (Readium's navigator); the reading modes
+        // below are PDF renderers and do not apply to it.
+        if book.format == .epub {
+            EPUBReaderView(model: model)
+        } else {
+            pdfReadingSurface(model)
+        }
+    }
+
+    @ViewBuilder
+    private func pdfReadingSurface(_ model: ReaderViewModel) -> some View {
         switch model.mode {
         case .physical:
             if let provider = model.provider {
@@ -210,15 +221,29 @@ struct ReaderView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { model.toggleMode() }
-            } label: {
-                Label(model.mode.displayName, systemImage: model.mode.systemImage)
-                    .labelStyle(.titleAndIcon)
-                    .font(.caption.weight(.semibold))
+            // Physical / Pristine are the two PDF renderers; an EPUB has one
+            // surface, so the toggle is hidden for it.
+            if book.format != .epub {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.toggleMode() }
+                } label: {
+                    Label(model.mode.displayName, systemImage: model.mode.systemImage)
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
+
+            if book.format == .epub {
+                Button {
+                    model.activePanel = .typography
+                } label: {
+                    Image(systemName: "textformat.size").font(.title3)
+                }
+                .accessibilityLabel("Text and layout")
+                .accessibilityIdentifier("reader.typography")
+            }
 
             Button {
                 model.toggleBookmark()
@@ -298,7 +323,7 @@ struct ReaderView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                if model.layout.mode == .spread {
+                if book.format == .epub ? model.epubBridge.isShowingSpread : model.layout.mode == .spread {
                     Label("Two pages", systemImage: "book")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -327,6 +352,8 @@ struct ReaderView: View {
             BookmarksPanelView(model: model)
         case .search:
             SearchPanelView(model: model)
+        case .typography:
+            TypographyPanel(model: model)
         }
     }
 }

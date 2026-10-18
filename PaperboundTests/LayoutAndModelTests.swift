@@ -180,7 +180,8 @@ final class ModelTests: XCTestCase {
         let locations: [ReadingLocation] = [
             .start,
             .pdfPage(index: 41, yOffset: 0.25),
-            .epubLocator(href: "chapter3.xhtml", progression: 0.4, totalProgression: 0.18)
+            .epubLocator(href: "chapter3.xhtml", progression: 0.4, totalProgression: 0.18,
+                          locatorJSON: #"{"href":"chapter3.xhtml","type":"application/xhtml+xml"}"#)
         ]
         for location in locations {
             let data = try JSONEncoder().encode(location)
@@ -192,7 +193,8 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(ReadingLocation.pdfPage(index: 4, yOffset: 0).pdfPageIndex, 4)
         XCTAssertNil(ReadingLocation.start.pdfPageIndex)
         XCTAssertNil(
-            ReadingLocation.epubLocator(href: "a.xhtml", progression: 0.1, totalProgression: nil).pdfPageIndex
+            ReadingLocation.epubLocator(href: "a.xhtml", progression: 0.1, totalProgression: nil,
+                                        locatorJSON: "{}").pdfPageIndex
         )
     }
 

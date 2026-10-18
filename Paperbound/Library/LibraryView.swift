@@ -180,13 +180,13 @@ struct LibraryView: View {
         ContentUnavailableView {
             Label("Your shelf is empty", systemImage: "books.vertical")
         } description: {
-            Text("Import a PDF from Files, or start with the sample book that ships with Paperbound.")
+            Text("Import a PDF or EPUB from Files, or start with the sample book that ships with Paperbound.")
         } actions: {
             VStack(spacing: 12) {
                 Button {
                     showFileImporter = true
                 } label: {
-                    Label("Import a PDF", systemImage: "square.and.arrow.down")
+                    Label("Import a Book", systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -228,7 +228,7 @@ struct LibraryView: View {
                 Button {
                     showFileImporter = true
                 } label: {
-                    Label("Import a PDF", systemImage: "square.and.arrow.down")
+                    Label("Import a Book", systemImage: "square.and.arrow.down")
                 }
                 Button {
                     library.installSample(into: context)
@@ -260,6 +260,10 @@ struct LibraryView: View {
     private func openDemoBookIfRequested() async {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if DemoEPUB.isRequested {
+            await openDemoEPUB()
+            return
+        }
         guard arguments.contains("-paperbound-demo"),
               !Self.didAutoOpenDemoBook,
               path.isEmpty
@@ -286,6 +290,29 @@ struct LibraryView: View {
         try? context.save()
 
         path = [book]
+        #endif
+    }
+
+    /// `-paperbound-demo-epub`: the EPUB counterpart of `-paperbound-demo`.
+    /// Imports the embedded sample EPUB (if it is not already on the shelf)
+    /// and opens it in the EPUB reader. Its saved position is kept, so a
+    /// relaunch checks restore; `-paperbound-demo-epub-reset` starts it over.
+    private func openDemoEPUB() async {
+        #if DEBUG
+        guard !Self.didAutoOpenDemoBook, path.isEmpty else { return }
+        Self.didAutoOpenDemoBook = true
+        do {
+            let book = try await DemoEPUB.installIfNeeded(store: library.store, context: context)
+            if ProcessInfo.processInfo.arguments.contains("-paperbound-demo-epub-reset") {
+                book.savedLocation = nil
+                book.progress = 0
+            }
+            book.savedEnvironment = nil
+            try? context.save()
+            path = [book]
+        } catch {
+            library.importError = "The demo EPUB could not be opened: \(error.localizedDescription)"
+        }
         #endif
     }
 

@@ -21,6 +21,10 @@ enum LibraryError: LocalizedError {
     case accessDenied(URL)
     case copyFailed(String)
     case storageUnavailable
+    /// DRM (Adobe ADEPT, Readium LCP, Apple FairPlay). Carries the file name.
+    case protectedBook(String)
+    /// Not a readable, zipped EPUB. Carries the file name.
+    case unreadableBook(String)
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +36,10 @@ enum LibraryError: LocalizedError {
             return "The file could not be copied into your library: \(reason)"
         case .storageUnavailable:
             return "The library folder could not be created."
+        case let .protectedBook(name):
+            return "“\(name)” is protected by DRM (copy protection), so Paperbound cannot open it. Books bought from stores such as Apple Books, Kobo or Google Play are often protected; DRM-free EPUBs import normally."
+        case let .unreadableBook(name):
+            return "“\(name)” could not be read as an EPUB. The file may be damaged, incomplete, or not really an EPUB."
         }
     }
 }
@@ -94,8 +102,9 @@ final class LibraryStore {
             throw LibraryError.unsupportedType(ext.isEmpty ? "unknown" : ext)
         }
         guard format == .pdf else {
-            // EPUB reaches the library only once a Readium-backed engine exists;
-            // importing a file the reader cannot open would be a dead end.
+            // An EPUB has to be opened with Readium (asynchronous) before it may
+            // be imported, to refuse DRM and broken files; `importBook` does
+            // that. This synchronous path stays PDF-only for its existing callers.
             throw ReadingEngineError.unsupportedFormat(ext)
         }
 
@@ -150,6 +159,102 @@ final class LibraryStore {
         try context.save()
 
         return ImportOutcome(book: book, wasAlreadyPresent: false)
+    }
+
+    /// Imports a PDF or an EPUB. The entry point for user imports.
+    ///
+    /// An EPUB is checked *before* it reaches the library folder: it is staged
+    /// in a temporary file, opened with Readium, and refused if it is
+    /// DRM-protected or unreadable, so a failed import leaves nothing behind.
+    @discardableResult
+    func importBook(at sourceURL: URL, into context: ModelContext) async throws -> ImportOutcome {
+        let ext = sourceURL.pathExtension.lowercased()
+        guard BookFormat.from(fileExtension: ext) == .epub else {
+            return try importFile(at: sourceURL, into: context)
+        }
+
+        let data: Data
+        do {
+            let needsScope = sourceURL.startAccessingSecurityScopedResource()
+            defer { if needsScope { sourceURL.stopAccessingSecurityScopedResource() } }
+            data = try Data(contentsOf: sourceURL, options: [.mappedIfSafe])
+        } catch {
+            throw LibraryError.accessDenied(sourceURL)
+        }
+
+        let fingerprint = Self.fingerprint(for: data)
+        if let existing = existingBook(withFingerprint: fingerprint, in: context) {
+            return ImportOutcome(book: existing, wasAlreadyPresent: true)
+        }
+
+        // Readium wants a file with an .epub extension; the staged copy also
+        // keeps the inspection independent of the source's security scope.
+        let staged = FileManager.default.temporaryDirectory
+            .appendingPathComponent("paperbound-import-\(UUID().uuidString).epub")
+        defer { try? FileManager.default.removeItem(at: staged) }
+        do {
+            try data.write(to: staged, options: [.atomic])
+        } catch {
+            throw LibraryError.copyFailed(error.localizedDescription)
+        }
+
+        let displayName = sourceURL.lastPathComponent
+        let metadata: EPUBImportMetadata
+        do {
+            metadata = try await EPUBImportInspector.inspect(staged)
+        } catch ReadingEngineError.encryptedDocument {
+            throw LibraryError.protectedBook(displayName)
+        } catch {
+            throw LibraryError.unreadableBook(displayName)
+        }
+
+        // The inspection awaited; the same file may have landed meanwhile
+        // (two "Open in" deliveries of one book, say).
+        if let existing = existingBook(withFingerprint: fingerprint, in: context) {
+            return ImportOutcome(book: existing, wasAlreadyPresent: true)
+        }
+
+        let bookID = UUID()
+        let destinationName = "\(bookID.uuidString).\(BookFormat.epub.fileExtension)"
+        let destination = booksDirectory.appendingPathComponent(destinationName)
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: staged, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw LibraryError.copyFailed(error.localizedDescription)
+        }
+
+        let book = Book(
+            id: bookID,
+            title: metadata.title ?? sourceURL.deletingPathExtension().lastPathComponent,
+            author: metadata.authorLine,
+            fileName: destinationName,
+            format: .epub,
+            contentFingerprint: fingerprint
+        )
+        book.language = metadata.language
+        book.pageCount = metadata.positionCount
+        // nil leaves the shelf's generated title-and-author cover in place.
+        book.coverData = metadata.coverJPEG
+
+        context.insert(book)
+        do {
+            try context.save()
+        } catch {
+            context.delete(book)
+            try? FileManager.default.removeItem(at: destination)
+            throw error
+        }
+        return ImportOutcome(book: book, wasAlreadyPresent: false)
+    }
+
+    private func existingBook(withFingerprint fingerprint: String, in context: ModelContext) -> Book? {
+        try? context.fetch(
+            FetchDescriptor<Book>(predicate: #Predicate { $0.contentFingerprint == fingerprint })
+        ).first
     }
 
     // MARK: - Delete
@@ -213,6 +318,8 @@ final class LibraryStore {
 
     /// Content types the file importer should offer.
     static var importableTypes: [UTType] {
-        [.pdf]
+        // `.epub` is `org.idpf.epub-container`: the zipped file. Exploded EPUB
+        // folders (`org.idpf.epub-folder`) are deliberately not offered.
+        [.pdf, .epub]
     }
 }

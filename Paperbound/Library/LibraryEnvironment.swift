@@ -24,7 +24,16 @@ final class LibraryEnvironment {
         self.store = store
     }
 
+    /// Imports in the background of the main actor: an EPUB is opened with
+    /// Readium (asynchronous) before it is accepted, so this cannot finish
+    /// synchronously. Callers fire and forget; the status lands in
+    /// `importError` / `importNotice`.
     func importFiles(_ urls: [URL], into context: ModelContext) {
+        guard !urls.isEmpty else { return }
+        Task { await importFilesNow(urls, into: context) }
+    }
+
+    func importFilesNow(_ urls: [URL], into context: ModelContext) async {
         guard !urls.isEmpty else { return }
         isImporting = true
         importError = nil
@@ -36,8 +45,16 @@ final class LibraryEnvironment {
 
         for url in urls {
             do {
-                let outcome = try store.importFile(at: url, into: context)
+                let outcome = try await store.importBook(at: url, into: context)
                 if outcome.wasAlreadyPresent { reused += 1 } else { imported += 1 }
+            } catch let error as LibraryError {
+                // These messages already name the file.
+                switch error {
+                case .protectedBook, .unreadableBook:
+                    failures.append(error.localizedDescription)
+                default:
+                    failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                }
             } catch {
                 failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
             }

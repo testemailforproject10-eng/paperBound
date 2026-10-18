@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Marks Protected.epub as Adobe ADEPT-encrypted. The content files are not
+  actually encrypted; the presence of this entry is what DRM detection keys on
+  (Readium's EPUBFormatSniffer looks for enc:EncryptedData/sig:KeyInfo/adept:resource).
+-->
+<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container"
+            xmlns:enc="http://www.w3.org/2001/04/xmlenc#"
+            xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+  <enc:EncryptedData>
+    <enc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc"/>
+    <ds:KeyInfo>
+      <resource xmlns="http://ns.adobe.com/adept">urn:uuid:00000000-0000-4000-8000-000000000000</resource>
+    </ds:KeyInfo>
+    <enc:CipherData>
+      <enc:CipherReference URI="OEBPS/chapter1.xhtml"/>
+    </enc:CipherData>
+  </enc:EncryptedData>
+</encryption>
